@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Mapping
 
-from jsonschema import Draft202012Validator, FormatChecker, ValidationError
+from jsonschema import Draft202012Validator, FormatChecker, SchemaError, ValidationError
 
 
 _SCHEMA_PATH = Path(__file__).resolve().parents[1] / "contracts" / "tool-invocation-request-v1.schema.json"
@@ -115,7 +115,19 @@ class ToolRuntime:
         self.handlers = dict(handlers)
         self.idempotency_store = idempotency_store
         self.approval_verifier = approval_verifier
-        self.audit_sink = audit_sink or (lambda event: None)
+        if not callable(audit_sink):
+            raise ValueError("a durable audit sink must be supplied")
+        self.audit_sink = audit_sink
+
+    def _emit_audit(self, event: dict) -> None:
+        try:
+            self.audit_sink(event)
+        except Exception as exc:
+            raise ToolInvocationError(
+                "AUDIT_UNAVAILABLE",
+                "audit sink unavailable; invocation is blocked",
+                503,
+            ) from exc
 
     @staticmethod
     def _canonical_hash(request: dict, principal: dict) -> str:
@@ -168,6 +180,7 @@ class ToolRuntime:
             or not isinstance(actor_id, str)
             or not actor_id.strip()
             or not isinstance(scopes, (set, frozenset, list, tuple))
+            or not all(isinstance(scope, str) for scope in scopes)
         ):
             raise ToolInvocationError("INVALID_PRINCIPAL", "trusted tenant, actor and scopes are required", 401)
 
@@ -192,17 +205,21 @@ class ToolRuntime:
             raise ToolInvocationError("INVALID_REGISTRY", "invocation input schema is missing", 500)
         try:
             Draft202012Validator.check_schema(input_schema)
+        except SchemaError as exc:
+            raise ToolInvocationError("INVALID_REGISTRY", "invocation input schema is invalid", 500) from exc
+        try:
             Draft202012Validator(input_schema).validate(request["input"])
-        except (ValidationError, Exception) as exc:
-            if isinstance(exc, ToolInvocationError):
-                raise
+        except ValidationError as exc:
             raise ToolInvocationError("INVALID_INPUT", "invocation input does not match its registered schema", 422) from exc
 
         handler = self.handlers.get((request["tool_id"], request["invocation_id"]))
         if not callable(handler):
             raise ToolInvocationError("ADAPTER_NOT_CONFIGURED", "no trusted adapter is registered for this operation", 503)
 
-        request_hash = self._canonical_hash(request, principal)
+        try:
+            request_hash = self._canonical_hash(request, principal)
+        except (TypeError, ValueError) as exc:
+            raise ToolInvocationError("INVALID_INPUT", "invocation input is not canonical JSON", 422) from exc
         if side_effect in _STATE_CHANGING:
             approval_id = request.get("approval_id")
             claims = {
@@ -213,18 +230,20 @@ class ToolRuntime:
                 "request_hash": request_hash,
                 "side_effect": side_effect,
             }
-            if (
-                not approval_id
-                or self.approval_verifier is None
-                or not self.approval_verifier(approval_id, claims)
-            ):
+            if not approval_id or self.approval_verifier is None:
                 raise ToolInvocationError("APPROVAL_REQUIRED", "a valid approval bound to this exact operation is required", 403)
+            try:
+                approved = self.approval_verifier(approval_id, claims)
+            except Exception as exc:
+                raise ToolInvocationError("APPROVAL_VERIFICATION_FAILED", "approval service is unavailable", 503) from exc
+            if not approved:
+                raise ToolInvocationError("APPROVAL_REQUIRED", "approval does not match this exact operation", 403)
 
         ledger_key = (tenant_id, request["idempotency_key"])
-        self.audit_sink(self._audit_event(request, principal, invocation, request_hash, "requested"))
+        self._emit_audit(self._audit_event(request, principal, invocation, request_hash, "requested"))
         state, prior_result = self.idempotency_store.claim(ledger_key, request_hash)
         if state == "replay":
-            self.audit_sink(self._audit_event(request, principal, invocation, request_hash, "replayed"))
+            self._emit_audit(self._audit_event(request, principal, invocation, request_hash, "replayed"))
             return {
                 "request_id": request["request_id"],
                 "status": "succeeded",
@@ -232,7 +251,11 @@ class ToolRuntime:
                 "replayed": True,
             }
 
-        self.audit_sink(self._audit_event(request, principal, invocation, request_hash, "started"))
+        try:
+            self._emit_audit(self._audit_event(request, principal, invocation, request_hash, "started"))
+        except ToolInvocationError:
+            self.idempotency_store.finish(ledger_key, "failed")
+            raise
         context = InvocationContext(
             tenant_id=tenant_id,
             actor_id=actor_id,
@@ -245,7 +268,7 @@ class ToolRuntime:
             safe_result = json.loads(encoded_result)
         except Exception as exc:
             self.idempotency_store.finish(ledger_key, "unknown")
-            self.audit_sink(self._audit_event(request, principal, invocation, request_hash, "outcome_unknown"))
+            self._emit_audit(self._audit_event(request, principal, invocation, request_hash, "outcome_unknown"))
             raise ToolInvocationError(
                 "OUTCOME_UNKNOWN",
                 "adapter outcome is unknown; automatic retry is blocked pending reconciliation",
@@ -253,7 +276,7 @@ class ToolRuntime:
             ) from exc
 
         self.idempotency_store.finish(ledger_key, "succeeded", safe_result)
-        self.audit_sink(self._audit_event(request, principal, invocation, request_hash, "succeeded"))
+        self._emit_audit(self._audit_event(request, principal, invocation, request_hash, "succeeded"))
         return {
             "request_id": request["request_id"],
             "status": "succeeded",
