@@ -1,0 +1,66 @@
+name: Private backend read-only preflight
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_read_only:
+        description: "Confirm that this run may read private plugin metadata and source files."
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: private-backend-read-preflight
+  cancel-in-progress: false
+
+jobs:
+  read-private-backend:
+    if: ${{ inputs.confirm_read_only == true }}
+    runs-on: ubuntu-latest
+    environment: private-backend-read
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Create short-lived, repository-scoped read token
+        id: app-token
+        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547
+        with:
+          app-id: ${{ secrets.SYMBIOTYC_READ_APP_ID }}
+          private-key: ${{ secrets.SYMBIOTYC_READ_APP_PRIVATE_KEY }}
+          owner: SYMBIOTYC
+          repositories: SYMBIOTYC-PLUGINS
+          permission-contents: read
+
+      - name: Check out private backend without persisting credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: SYMBIOTYC/SYMBIOTYC-PLUGINS
+          ref: main
+          token: ${{ steps.app-token.outputs.token }}
+          path: private-backend
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+
+      - name: Validate private catalog without printing its contents
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          path = Path("private-backend/catalog/plugins.json")
+          catalog = json.loads(path.read_text(encoding="utf-8"))
+          assert catalog["schema_version"] == "1.0"
+          assert len(catalog["plugins"]) == 10
+          names = {item["name"] for item in catalog["plugins"]}
+          assert "symbiotyc-remoteview" in names
+          assert "spine-text-animator" in names
+          print("Private backend read-only checkout and catalog validation succeeded.")
+          PY
