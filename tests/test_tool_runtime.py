@@ -67,7 +67,27 @@ class ToolRuntimeTests(unittest.TestCase):
             handlers,
             idempotency_store=InMemoryIdempotencyStore(),
             approval_verifier=approval_verifier,
+            audit_sink=lambda event: None,
         )
+
+    def test_constructor_requires_an_audit_sink(self):
+        with self.assertRaises(ValueError):
+            ToolRuntime(VERIFIED_REGISTRY, {}, idempotency_store=InMemoryIdempotencyStore())
+
+    def test_audit_outage_blocks_handler_execution(self):
+        calls = []
+        def broken_audit(event):
+            raise RuntimeError("audit storage unavailable")
+        runtime = ToolRuntime(
+            VERIFIED_REGISTRY,
+            {("tool.example", "example.lookup"): lambda data, context: calls.append(data)},
+            idempotency_store=InMemoryIdempotencyStore(),
+            audit_sink=broken_audit,
+        )
+        with self.assertRaises(ToolInvocationError) as caught:
+            runtime.invoke(REQUEST, PRINCIPAL)
+        self.assertEqual(caught.exception.code, "AUDIT_UNAVAILABLE")
+        self.assertEqual(calls, [])
 
     def test_invokes_verified_handler_with_validated_input(self):
         seen = []
