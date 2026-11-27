@@ -65,3 +65,14 @@ The example is illustrative only; `example-plugin`, action names and capabilitie
 ## Not implemented by this contract
 
 Schema validation alone does not provide sender authentication, authorization, replay protection, atomic idempotency, artifact access control, a run ledger, a private worker, retries, cancellation or audit logging. Those are dispatcher/worker responsibilities and must be tested before production activation.
+
+
+## Automated contract CI
+
+The public hub validates the event schema and negative security cases through `.github/workflows/plugin-contract-ci.yml`.
+
+- Triggers: every push to `main`, every pull request, and manual `workflow_dispatch`.
+- No path filters are used, so moving a plugin file cannot suppress the contract workflow.
+- Workflow permissions are read-only (`contents: read`); checkout and Python setup actions are pinned to immutable commit SHAs.
+- The workflow installs the pinned `jsonschema` validator and runs the standard-library `unittest` suite.
+- This CI validates the public event envelope only. It does not authenticate senders, access private repositories, dispatch private work, or publish artifacts.

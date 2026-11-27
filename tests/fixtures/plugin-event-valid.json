@@ -1,0 +1,26 @@
+{
+  "schema_version": "1.0",
+  "event_id": "018f47d2-8c3a-7a41-9b10-8a11b12c13d4",
+  "plugin_id": "example-plugin",
+  "action": "validate",
+  "source_repository": "SYMBIOTYC/example-plugin",
+  "source_ref": "refs/heads/main",
+  "source_commit": "0123456789abcdef0123456789abcdef01234567",
+  "request_id": "118f47d2-8c3a-7a41-9b10-8a11b12c13d4",
+  "idempotency_key": "example-plugin:validate:request-001",
+  "actor": {
+    "type": "github_app",
+    "id": "symbiotyc-plugin-app"
+  },
+  "issued_at": "2026-11-27T19:00:00Z",
+  "artifact_refs": [
+    {
+      "visibility": "private",
+      "ref": "private-artifact:asset-001",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  ],
+  "requested_capabilities": [
+    "plugin.validate"
+  ]
+}
