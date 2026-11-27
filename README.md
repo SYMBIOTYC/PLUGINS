@@ -1,6 +1,6 @@
 # PLUGINS
 
-Shared contracts and runtime core for SYMBIOTYC plugin and tool invocation routing.
+Shared contracts and runtime core for SYMBIOTYC plugin, Tool and Skill invocation routing.
 
 ## Contracts
 
@@ -8,11 +8,15 @@ Shared contracts and runtime core for SYMBIOTYC plugin and tool invocation routi
 - [Plugin Event JSON Schema](contracts/plugin-event-v1.schema.json)
 - [Tool Invocation Runtime v1](docs/tool-invocation-runtime-v1.md)
 - [Tool Invocation Request JSON Schema](contracts/tool-invocation-request-v1.schema.json)
+- [Skill Runtime v1](docs/skill-runtime-v1.md)
+- [Skill Run Request JSON Schema](contracts/skill-run-request-v1.schema.json)
 
 ## Runtime core
 
-- [In-process typed invocation runtime](runtime/tool_runtime.py)
-- [Runtime security and idempotency tests](tests/test_tool_runtime.py)
+- [In-process typed Tool invocation runtime](runtime/tool_runtime.py)
+- [Sequential Skill orchestration runtime](runtime/skill_runtime.py)
+- [Tool runtime tests](tests/test_tool_runtime.py)
+- [Skill runtime tests](tests/test_skill_runtime.py)
 
 ## Private backend access
 
@@ -20,4 +24,4 @@ Shared contracts and runtime core for SYMBIOTYC plugin and tool invocation routi
 
 ## Operational boundary
 
-The Tool Invocation Runtime is currently an in-process reference core, not a deployed HTTP endpoint. It requires a trusted host to authenticate callers, supply tenant/actor/scopes, provide durable idempotency and audit services, verify approvals, and register deployment-specific adapters. Catalog discovery does not authorize invocation. Production dispatch remains disabled.
+Tool and Skill runtimes are in-process reference cores, not deployed HTTP endpoints. The host must authenticate callers and supply tenant/actor/scopes, durable idempotency and audit services, approval verification, and deployment-specific adapters. Skill definitions are trusted server-side mappings; they cannot widen Tool scopes or execute arbitrary catalog text. All current awesome-selfhosted candidates remain discovery-only; no production dispatch is enabled.
