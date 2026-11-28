@@ -81,6 +81,16 @@ async function deriveActivationReadPrincipal(identity, env) {
   };
 }
 
+async function deriveActivationEvaluatePrincipal(identity, env) {
+  const principal = await derivePrincipal(identity, env);
+  return {
+    ...principal,
+    kind: "service",
+    actor_id: "amphetamin:activation-policy-evaluator",
+    scopes: ["compute:activation:evaluate"]
+  };
+}
+
 async function sha256Text(value) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -144,6 +154,28 @@ function toolList() {
       name: "compute_activation_state",
       description: "Read the durable AMPHETAMIN activation, deployment streak, and burnout snapshot for the authenticated project. Read-only; cannot create deployment or recovery events.",
       inputSchema: { type: "object", properties: {}, additionalProperties: false }
+    },
+    {
+      name: "compute_activation_evaluate",
+      description: "Evaluate a caller-supplied telemetry snapshot against the project's durable AMPHETAMIN activation and burnout state. Returns a policy decision only; it does not dispatch jobs or provision Workers.",
+      inputSchema: {
+            type: "object",
+            required: ["backlog", "ambiguous_tasks", "resource_pressure", "overload_score", "quality_score", "cooldown_latched", "recovery_score", "integrity_risk", "available_credits", "max_credits", "max_workers"],
+            properties: {
+              backlog: { type: "integer", minimum: 0, maximum: 4294967295 },
+              ambiguous_tasks: { type: "integer", minimum: 0, maximum: 4294967295 },
+              resource_pressure: { type: "integer", minimum: 0, maximum: 100 },
+              overload_score: { type: "integer", minimum: 0, maximum: 100 },
+              quality_score: { type: "integer", minimum: 0, maximum: 100 },
+              cooldown_latched: { type: "integer", minimum: 0, maximum: 1 },
+              recovery_score: { type: "integer", minimum: 0, maximum: 100 },
+              integrity_risk: { type: "integer", minimum: 0, maximum: 1 },
+              available_credits: { type: "integer", minimum: 0, maximum: 4294967295 },
+              max_credits: { type: "integer", minimum: 0, maximum: 4294967295 },
+              max_workers: { type: "integer", minimum: 0, maximum: 4294967295 }
+            },
+            additionalProperties: false
+          }
     }
   ];
 }
@@ -236,6 +268,31 @@ async function readGroupJson(env, principal, path) {
   return { status_code: response.status, body };
 }
 
+async function postGroupJson(env, principal, path, body) {
+  if (!env?.GROUP || typeof env.GROUP.fetch !== "function") {
+    throw new Error("GROUP service binding is unavailable");
+  }
+  const response = await env.GROUP.fetch(new Request(`https://group.internal${path}`, {
+    method: "POST",
+    headers: {
+      "accept": "application/json",
+      "content-type": "application/json",
+      "x-symbiotyc-caller": "amphetamin",
+      "x-symbiotyc-principal": encodeGroupPrincipal(principal)
+    },
+    body: JSON.stringify(body)
+  }));
+  const text = await readResponseLimited(response, MAX_GROUP_RESPONSE_BYTES);
+  let value;
+  try { value = JSON.parse(text); }
+  catch { throw new Error("GROUP returned an invalid JSON response"); }
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("GROUP returned an invalid response object");
+  }
+  if (response.status >= 500) throw new Error("GROUP policy evaluation failed");
+  return { status_code: response.status, body: value };
+}
+
 async function executeSkill(env, principal, requestId, skillId, input) {
   if (!env?.RUNTIME_DB || typeof env.RUNTIME_DB.prepare !== "function") {
     throw new Error("durable Tool/Skill Runtime database binding is unavailable");
@@ -247,7 +304,10 @@ async function executeSkill(env, principal, requestId, skillId, input) {
       "symbiotyc.group:health": async () => readGroupHealth(env),
       "symbiotyc.group:capabilities": async () => readGroupJson(env, principal, "/v1/capabilities"),
       "symbiotyc.group:get_job": async (toolInput) => readGroupJson(env, principal, `/v1/jobs/${toolInput.job_id}`),
-      "symbiotyc.group:activation_state": async () => readGroupJson(env, principal, "/v1/activation/state")
+      "symbiotyc.group:activation_state": async () => readGroupJson(env, principal, "/v1/activation/state"),
+      "symbiotyc.group:activation_evaluate": async (toolInput) => postGroupJson(
+        env, principal, "/v1/activation/evaluate", toolInput
+      )
     },
     {
       idempotencyStore: new D1IdempotencyStore(env.RUNTIME_DB, "tool"),
@@ -396,14 +456,17 @@ export async function handleRequest(request, env, ctx) {
       "group.health": "skill.symbiotyc.group-health",
       "compute_capabilities": "skill.symbiotyc.group-capabilities",
       "compute_get_job": "skill.symbiotyc.group-get-job",
-      "compute_activation_state": "skill.symbiotyc.group-activation-state"
+      "compute_activation_state": "skill.symbiotyc.group-activation-state",
+      "compute_activation_evaluate": "skill.symbiotyc.group-activation-evaluate"
     };
     const skillId = toolToSkill[params.name];
     if (!skillId) return rpcError(id, -32602, "Unknown tool");
     try {
       const principal = skillId === "skill.symbiotyc.group-activation-state"
         ? await deriveActivationReadPrincipal(identity, env)
-        : await derivePrincipal(identity, env);
+        : skillId === "skill.symbiotyc.group-activation-evaluate"
+          ? await deriveActivationEvaluatePrincipal(identity, env)
+          : await derivePrincipal(identity, env);
       const input = params.arguments;
       const result = await executeSkill(env, principal, id, skillId, input);
       const isError = typeof result?.status_code === "number" && result.status_code >= 400;
