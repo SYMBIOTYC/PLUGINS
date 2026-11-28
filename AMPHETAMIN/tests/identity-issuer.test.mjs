@@ -87,7 +87,7 @@ function rpcRequest(token) {
       jsonrpc: "2.0",
       id: "issuer-scope-test",
       method: "tools/call",
-      params: { name: "compute_activation_state", arguments: {} }
+      params: { name: "compute_capabilities", arguments: {} }
     })
   });
 }
@@ -164,9 +164,9 @@ test("caller-supplied tenant, project, actor, and scopes never override trusted 
     assert.ok(result.groupPrincipal);
     assert.equal(result.groupPrincipal.tenant_id, "tenant-from-deployment");
     assert.equal(result.groupPrincipal.project_id, "project-from-deployment");
-    assert.equal(result.groupPrincipal.kind, "service");
+    assert.equal(result.groupPrincipal.kind, "user");
     assert.equal(result.groupPrincipal.actor_id, `access:${createHash("sha256").update(`${ISSUER_A}\u0000stable-user-subject`).digest("hex")}`);
-    assert.deepEqual(result.groupPrincipal.scopes, ["compute:activation:read"]);
+    assert.deepEqual(result.groupPrincipal.scopes, ["compute:read", "compute:jobs:read"]);
     assert.notEqual(result.groupPrincipal.actor_id, "attacker-actor");
   });
 });
@@ -192,11 +192,15 @@ test("email-only Access identity without a signed immutable subject is rejected"
 
 test("issuer mismatch, audience mismatch, expiry, and invalid JWT signature fail closed", async () => {
   await withAccessJwks(async () => {
+    const validToken = await signAccessJwt({ issuer: ISSUER_A });
+    const tokenParts = validToken.split(".");
+    tokenParts[2] = `${tokenParts[2].slice(0, -1)}${tokenParts[2].endsWith("A") ? "B" : "A"}`;
     const cases = [
       { label: "wrong issuer", token: await signAccessJwt({ issuer: ISSUER_B }) },
       { label: "wrong audience", token: await signAccessJwt({ audience: "another-audience" }) },
       { label: "expired token", token: await signAccessJwt({ exp: Math.floor(Date.now() / 1000) - 60 }) },
-      { label: "missing subject", token: await signAccessJwt({ subject: "" }) }
+      { label: "missing subject", token: await signAccessJwt({ subject: "" }) },
+      { label: "invalid signature", token: tokenParts.join(".") }
     ];
     for (const item of cases) {
       const response = await handleRequest(rpcRequest(item.token), {
