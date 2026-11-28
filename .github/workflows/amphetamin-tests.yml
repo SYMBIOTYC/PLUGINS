@@ -1,0 +1,28 @@
+name: AMPHETAMIN tests
+
+on:
+  pull_request:
+    paths:
+      - "AMPHETAMIN/**"
+      - ".github/workflows/amphetamin-tests.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "AMPHETAMIN/**"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: AMPHETAMIN
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node --test tests/*.test.mjs
