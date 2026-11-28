@@ -173,37 +173,41 @@ test("caller-supplied tenant, project, actor, and scopes never override trusted 
 });
 
 test("email-only Access assertion without a signed immutable subject is rejected", async () => {
-  const token = await signAccessJwt({ issuer: ISSUER_A, subject: "", email: "email-only@example.invalid" });
-  const response = await handleRequest(
-    rpcRequest(token),
-    {
-      CLOUDFLARE_ACCESS_ISSUER: ISSUER_A,
-      COMPUTE_TENANT_ID: "tenant",
-      COMPUTE_PROJECT_ID: "project"
-    },
-    { access: { aud: AUD } }
-  );
-  assert.equal(response.status, 401);
+  await withAccessJwks(async () => {
+    const token = await signAccessJwt({ issuer: ISSUER_A, subject: "", email: "email-only@example.invalid" });
+    const response = await handleRequest(
+      rpcRequest(token),
+      {
+        CLOUDFLARE_ACCESS_ISSUER: ISSUER_A,
+        COMPUTE_TENANT_ID: "tenant",
+        COMPUTE_PROJECT_ID: "project"
+      },
+      { access: { aud: AUD } }
+    );
+    assert.equal(response.status, 401);
+  });
 });
 
-test("WARP-style Access context with only aud still resolves the signed issuer and subject", async () => {
-  const token = await signAccessJwt({ issuer: ISSUER_A, subject: "warp-user-subject" });
-  let principal = null;
-  const response = await handleRequest(rpcRequest(token), {
-    CLOUDFLARE_ACCESS_ISSUER: ISSUER_A,
-    COMPUTE_TENANT_ID: "tenant",
-    COMPUTE_PROJECT_ID: "project",
-    RUNTIME_DB: new FakeD1(),
-    GROUP: {
-      fetch: async (request) => {
-        const encoded = request.headers.get("x-symbiotyc-principal");
-        if (encoded) principal = decodePrincipal(encoded);
-        return Response.json({ ok: true });
+test("WARP-style Access context with only aud verifies issuer and immutable subject", async () => {
+  await withAccessJwks(async () => {
+    const token = await signAccessJwt({ issuer: ISSUER_A, subject: "warp-user-subject" });
+    let principal = null;
+    const response = await handleRequest(rpcRequest(token), {
+      CLOUDFLARE_ACCESS_ISSUER: ISSUER_A,
+      COMPUTE_TENANT_ID: "tenant",
+      COMPUTE_PROJECT_ID: "project",
+      RUNTIME_DB: new FakeD1(),
+      GROUP: {
+        fetch: async (request) => {
+          const encoded = request.headers.get("x-symbiotyc-principal");
+          if (encoded) principal = decodePrincipal(encoded);
+          return Response.json({ ok: true });
+        }
       }
-    }
-  }, { access: { aud: AUD } });
-  assert.equal(response.status, 200);
-  assert.equal(principal.actor_id, `access:${createHash("sha256").update(ISSUER_A + String.fromCharCode(0) + "warp-user-subject").digest("hex")}`);
+    }, { access: { aud: AUD } });
+    assert.equal(response.status, 200);
+    assert.equal(principal.actor_id, `access:${createHash("sha256").update(ISSUER_A + String.fromCharCode(0) + "warp-user-subject").digest("hex")}`);
+  });
 });
 
 test("issuer mismatch, audience mismatch, expiry, and missing subject fail closed", async () => {
