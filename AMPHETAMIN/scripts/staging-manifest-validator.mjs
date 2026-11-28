@@ -41,7 +41,7 @@ export async function verifyMigrationInventory(manifest, groupRoot) {
       continue;
     }
     const name = path.slice("migrations/".length);
-    if (!name || name.includes("/") || name.includes("\")) {
+    if (!name || name.includes("/") || name.includes("\\")) {
       errors.push(`unsafe migration path: ${path}`);
       continue;
     }
