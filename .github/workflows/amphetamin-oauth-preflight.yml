@@ -1,0 +1,28 @@
+name: AMPHETAMIN OAuth preflight
+
+on:
+  pull_request:
+    paths:
+      - "AMPHETAMIN/scripts/oauth-preflight.mjs"
+      - "AMPHETAMIN/tests/oauth-preflight.test.mjs"
+      - ".github/workflows/amphetamin-oauth-preflight.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  metadata-contract:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: AMPHETAMIN
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Unit-test discovery validation
+        run: node --test tests/oauth-preflight.test.mjs
+      - name: Probe live Access OAuth discovery (read-only)
+        run: node scripts/oauth-preflight.mjs

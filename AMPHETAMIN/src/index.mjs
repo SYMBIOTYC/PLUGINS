@@ -272,8 +272,40 @@ function toolTextResult(value, isError = false) {
   };
 }
 
+function isAllowedOrigin(request, env) {
+  const origin = request.headers.get("origin");
+  if (origin === null) return true;
+
+  let parsed;
+  try {
+    parsed = new URL(origin);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== "https:" || parsed.origin !== origin) return false;
+
+  const configured = typeof env?.MCP_ALLOWED_ORIGINS === "string"
+    ? env.MCP_ALLOWED_ORIGINS.split(",").map((value) => value.trim()).filter(Boolean)
+    : [];
+  const allowed = new Set();
+  for (const value of configured) {
+    try {
+      const candidate = new URL(value);
+      if (candidate.protocol === "https:" && candidate.origin === value) {
+        allowed.add(candidate.origin);
+      }
+    } catch {
+      // Invalid allowlist entries are ignored; they never broaden access.
+    }
+  }
+  return allowed.has(parsed.origin);
+}
+
 export async function handleRequest(request, env, ctx) {
   const url = new URL(request.url);
+  if (!isAllowedOrigin(request, env)) {
+    return json({ ok: false, error: "origin_not_allowed" }, 403);
+  }
   if (url.pathname !== "/mcp" && url.pathname !== "/health") {
     return json({ ok: false, error: "not_found" }, 404);
   }
