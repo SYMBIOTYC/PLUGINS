@@ -49,6 +49,7 @@ test("blocks a manifest when a pinned migration blob differs", async () => {
 test("blocks missing migration files and unsafe paths", async () => {
   const root = await mkdtemp(join(tmpdir(), "group-migrations-"));
   try {
+    await mkdir(join(root, "migrations"));
     const manifest = { resources: { d1: { expected_migration_blobs: [
       { path: "../outside.sql", git_blob_sha: "0".repeat(40) },
       { path: "migrations/0002_missing.sql", git_blob_sha: "0".repeat(40) }
