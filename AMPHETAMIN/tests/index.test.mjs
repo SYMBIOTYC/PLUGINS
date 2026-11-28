@@ -76,3 +76,61 @@ test("acknowledges MCP notifications without a response body", async () => {
   assert.equal(await response.text(), "");
 });
 test("exports a Cloudflare Worker fetch handler", () => assert.equal(typeof worker.fetch, "function"));
+
+
+test("rejects browser-originated MCP requests when no origin allowlist is configured", async () => {
+  const request = new Request("https://amphetamin.example/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: "https://chatgpt.com" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} })
+  });
+  const response = await handleRequest(request, baseEnv(), access);
+  assert.equal(response.status, 403);
+});
+
+test("accepts an exact HTTPS origin from the configured allowlist", async () => {
+  const request = new Request("https://amphetamin.example/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: "https://chatgpt.com" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} })
+  });
+  const response = await handleRequest(request, baseEnv({
+    MCP_ALLOWED_ORIGINS: "https://chatgpt.com,https://chat.openai.com"
+  }), access);
+  assert.equal(response.status, 200);
+});
+
+test("rejects lookalike and non-allowlisted origins", async () => {
+  const request = new Request("https://amphetamin.example/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: "https://chatgpt.com.attacker.invalid" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} })
+  });
+  const response = await handleRequest(request, baseEnv({
+    MCP_ALLOWED_ORIGINS: "https://chatgpt.com"
+  }), access);
+  assert.equal(response.status, 403);
+});
+
+test("rejects malformed and non-HTTPS Origin values", async () => {
+  for (const origin of ["null", "https://chatgpt.com/path", "http://chatgpt.com", "not-an-origin"]) {
+    const request = new Request("https://amphetamin.example/mcp", {
+      method: "POST",
+      headers: { "content-type": "application/json", origin },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} })
+    });
+    const response = await handleRequest(request, baseEnv({
+      MCP_ALLOWED_ORIGINS: "https://chatgpt.com"
+    }), access);
+    assert.equal(response.status, 403, origin);
+  }
+});
+
+test("applies Origin validation to the health route as well", async () => {
+  const request = new Request("https://amphetamin.example/health", {
+    method: "GET",
+    headers: { origin: "https://evil.invalid" }
+  });
+  const response = await handleRequest(request, baseEnv(), access);
+  assert.equal(response.status, 403);
+});
