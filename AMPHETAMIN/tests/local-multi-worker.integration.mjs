@@ -47,7 +47,10 @@ async function waitForGroupBinding() {
     const result = await callTool("group.health", {}, `local-group-health-${attempt}`);
     if (result?.isError === false) {
       const health = JSON.parse(result.content[0].text);
-      assert.equal(health.status_code, 200, JSON.stringify(health));
+      assert.equal(health.status, "ok", JSON.stringify(health));
+      assert.equal(health.service, "symbiotyc-group-control-plane", JSON.stringify(health));
+      assert.equal(health.protocol, "symbiotyc.compute.v1", JSON.stringify(health));
+      assert.equal(health.dispatch_enabled, false, JSON.stringify(health));
       return;
     }
 
