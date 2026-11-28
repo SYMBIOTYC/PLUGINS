@@ -134,3 +134,22 @@ References:
 - [MCP 2025-11-25 Streamable HTTP](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/docs/specification/2025-11-25/basic/transports.mdx)
 - [MCP 2026-07-28 Streamable HTTP](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/docs/specification/2026-07-28/basic/transports/streamable-http.mdx)
 - [Cloudflare Managed OAuth](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/managed-oauth/)
+
+
+## Draft PR #24 — Origin validation hardening
+
+A draft implementation is in [PR #24](https://github.com/SYMBIOTYC/PLUGINS/pull/24), branch `security/amphetamin-origin-validation`.
+
+Changes on the branch:
+- Added a strict HTTPS Origin allowlist check before route handling and before Access identity processing. Requests without an Origin header continue to support server-to-server MCP clients; requests with an Origin must match an exact configured origin.
+- The allowlist is configured through non-secret `MCP_ALLOWED_ORIGINS`, set in `AMPHETAMIN/wrangler.toml` to `https://chatgpt.com,https://chat.openai.com`.
+- Invalid, non-HTTPS, path-bearing, lookalike, and unconfigured Origin values are rejected with HTTP 403.
+- The same check applies to both `/mcp` and `/health`.
+- Added regression cases for absent configuration, exact allowlist match, lookalike host, malformed/non-HTTPS values, and the health route.
+- Added a GitHub Actions workflow using Node.js 22 and the repository's actual command: `node --test tests/*.test.mjs`.
+
+TDD ordering: tests were committed before the implementation. However, the available GitHub connector reports no workflow runs and no commit statuses for the branch, so neither the RED run nor GREEN run has been observed. The PR remains draft and must not be merged until CI actually executes and passes.
+
+The implementation does not add `MCP-Protocol-Version` negotiation or claim support for the 2026-07-28 protocol. The deployed server remains pinned to legacy `2025-03-26`; the 2026-07-28 revision changes the protocol model substantially (stateless request metadata, no initialize handshake, and required mirrored headers). Changing protocol versions requires a separate compatibility design and client verification.
+
+No production Worker deployment or Access policy change was made.
