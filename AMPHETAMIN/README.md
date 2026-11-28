@@ -19,12 +19,14 @@ The three exposed read-only MCP tools execute through:
 
 The runtime layer includes strict request/schema validation, trusted server-side handlers, tenant-scoped D1 idempotency, append-only metadata-only audit, preflight validation, and unknown-outcome quarantine. A source-level GROUP approval consumer is now integrated into the Tool Runtime; it is gated by `GROUP_APPROVALS_LIVE=true`, requires an operation-bound approval ID, and uses a consume-only principal. The gate remains unset/false in production.
 
-This is a parity adapter implemented in TypeScript for the Cloudflare Worker. The original Python Tool/Skill Runtime remains authoritative in the PLUGINS root and is not imported by this Worker. The adapter is deliberately limited to the verified read-only health operation at this stage.
+This is a parity adapter implemented in TypeScript for the Cloudflare Worker. The original Python Tool/Skill Runtime remains authoritative in the PLUGINS root and is not imported by this Worker. The deployed adapter exposes the three verified read-only tools; the approval consumer is source-integrated but is not part of the live Worker bundle.
 
 ## Tool availability
 
 - `group.health` — enabled through Skill Runtime and Tool Runtime.
-- Compute Job submission, capability reads, Job reads, and cancellation are temporarily withheld from this runtime-parity release. They must be reintroduced only after equivalent verified Tool/Skill definitions, scope checks, approval handling for state changes, and parity tests exist.
+- `compute_capabilities` — enabled, read-only.
+- `compute_get_job` — enabled, read-only.
+- `compute_submit_job` and `compute_cancel_job` — withheld. Approval creation and write Tool/Skill definitions are not yet implemented; the live GROUP approval routes are unavailable.
 
 This staged reduction is intentional: no operation may bypass the runtime boundary merely to preserve a previous MCP tool listing.
 
@@ -59,3 +61,12 @@ Before upgrading the live Worker:
 6. confirm the D1 audit row and idempotency row are recorded without secrets or raw email.
 
 Production deployment is complete. Cloudflare read-back confirms the active version, D1 binding, private GROUP binding, owner-only Access policy, OAuth/DCR configuration, `workers.dev=true`, and `previews_enabled=false`. A full authenticated external MCP handshake and production read-only tool invocation remain outstanding; do not claim end-to-end request success until those are observed. The GROUP Worker remains on its pre-approval live version; the approval routes are not active there.
+
+
+## Source approval verifier — merged, not deployed
+
+[PLUGINS PR #21](https://github.com/SYMBIOTYC/PLUGINS/pull/21) is merged at `8b69c756d6a5e757126b6f0f326ec4f7dde8372d`. The AMPHETAMIN source now contains a fail-closed one-time GROUP approval consumer, wired into Tool Runtime. The three AMPHETAMIN MCP host/edge/contract CI workflows passed on the final PR head.
+
+For `submit_job`, the verifier maps the invocation to GROUP action `job.submit`, while the operation ID is derived from the validated `job_intent.operation_id` field and bound into the exact Tool request hash. For `cancel_job`, the action and operation ID are both fixed to `job.cancel`. The verifier forwards only `compute:approvals:consume` through the private GROUP Service Binding.
+
+The verifier remains disabled unless `GROUP_APPROVALS_LIVE=true`. The live GROUP Worker still runs its pre-approval version, so approval creation and consumption routes are not active in production. No submit/cancel tools are advertised, and no dispatch or production Worker update was performed.
