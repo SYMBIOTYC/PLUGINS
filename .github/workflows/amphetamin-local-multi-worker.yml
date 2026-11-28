@@ -10,7 +10,7 @@ on:
       - ".github/workflows/amphetamin-local-multi-worker.yml"
   pull_request:
     paths:
-      - "AMPHETAMIN/tests/local-multi-worker.integration.mjs"
+      - "AMPHETAMIN/**"
       - "AMPHETAMIN/tests/fixtures/**"
       - ".github/workflows/amphetamin-local-multi-worker.yml"
   workflow_dispatch:
