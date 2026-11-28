@@ -42,14 +42,10 @@ function parseTomlValue(source, lineNumber) {
   throw new Error(`Unsupported TOML value at line ${lineNumber}`);
 }
 
-/**
- * Parse the small Wrangler TOML subset used by the AMPHETAMIN deployment
- * configuration. This is deliberately not a general-purpose TOML parser.
- */
+/** Parse the Wrangler TOML subset used by AMPHETAMIN deployment configs. */
 export function parseWranglerToml(source) {
   if (typeof source !== "string") throw new TypeError("Wrangler config must be text");
   const config = { vars: {}, services: [], d1_databases: [] };
-  let section = "root";
   let table = config;
 
   for (const [index, rawLine] of source.split(/\r?\n/).entries()) {
@@ -58,7 +54,7 @@ export function parseWranglerToml(source) {
 
     const arrayTable = line.match(/^\[\[([A-Za-z0-9_-]+)\]\]$/);
     if (arrayTable) {
-      section = arrayTable[1];
+      const section = arrayTable[1];
       if (!Array.isArray(config[section])) config[section] = [];
       table = {};
       config[section].push(table);
@@ -67,7 +63,7 @@ export function parseWranglerToml(source) {
 
     const namedTable = line.match(/^\[([A-Za-z0-9_-]+)\]$/);
     if (namedTable) {
-      section = namedTable[1];
+      const section = namedTable[1];
       if (!config[section] || typeof config[section] !== "object" || Array.isArray(config[section])) {
         config[section] = {};
       }
@@ -77,17 +73,56 @@ export function parseWranglerToml(source) {
 
     const assignment = line.match(/^([A-Za-z0-9_-]+)\s*=\s*(.+)$/);
     if (!assignment) throw new Error(`Invalid Wrangler TOML syntax at line ${index + 1}`);
-    const [, key, rawValue] = assignment;
-    table[key] = parseTomlValue(rawValue, index + 1);
+    table[assignment[1]] = parseTomlValue(assignment[2], index + 1);
   }
 
   return config;
 }
 
-function firstBinding(bindings, binding) {
-  return Array.isArray(bindings)
-    ? bindings.find((item) => item?.binding === binding)
-    : undefined;
+function stripJsoncComments(source) {
+  let output = "";
+  let inString = false;
+  let escaped = false;
+  for (let index = 0; index < source.length; index += 1) {
+    const char = source[index];
+    const next = source[index + 1];
+    if (inString) {
+      output += char;
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === '"') inString = false;
+      continue;
+    }
+    if (char === '"') {
+      inString = true;
+      output += char;
+    } else if (char === "/" && next === "/") {
+      while (index < source.length && source[index] !== "\n") index += 1;
+      output += "\n";
+    } else if (char === "/" && next === "*") {
+      index += 2;
+      while (index < source.length && !(source[index] === "*" && source[index + 1] === "/")) index += 1;
+      index += 1;
+      output += " ";
+    } else {
+      output += char;
+    }
+  }
+  return output;
+}
+
+/** Parse Wrangler's JSONC config without interpreting comments inside strings. */
+export function parseWranglerJsonc(source) {
+  if (typeof source !== "string") throw new TypeError("Wrangler JSONC config must be text");
+  try {
+    return JSON.parse(stripJsoncComments(source));
+  } catch (error) {
+    throw new Error(`Invalid Wrangler JSONC config: ${error.message}`);
+  }
+}
+
+function bindings(items, binding) {
+  return Array.isArray(items) ? items.filter((item) => item?.binding === binding) : [];
 }
 
 function nonEmptyString(value) {
@@ -95,52 +130,90 @@ function nonEmptyString(value) {
 }
 
 /**
- * Validate a staging Worker config against the deployed production config.
- * Access application/policy state is intentionally not inferred from TOML.
+ * Validate both staging Workers as an isolated pair against production.
+ * GROUP must remain Service-Binding-only: no workers.dev, previews, or routes.
+ * Cloudflare Access policy state is never inferred from repository config.
  */
-export function validateStagingConfig(staging, production) {
+export function validateStagingConfig(staging, production, stagingGroup, productionGroup) {
   const errors = [];
   const add = (condition, message) => {
     if (!condition) errors.push(message);
   };
 
-  add(staging && typeof staging === "object", "Staging Wrangler config is missing");
-  add(production && typeof production === "object", "Production Wrangler config is missing");
-  if (!staging || typeof staging !== "object" || !production || typeof production !== "object") {
+  add(staging && typeof staging === "object", "Staging AMPHETAMIN config is missing");
+  add(production && typeof production === "object", "Production AMPHETAMIN config is missing");
+  add(stagingGroup && typeof stagingGroup === "object", "Staging GROUP config is missing");
+  add(productionGroup && typeof productionGroup === "object", "Production GROUP config is missing");
+  if (![staging, production, stagingGroup, productionGroup].every((item) => item && typeof item === "object")) {
     return { ok: false, errors, access_policy_verified: false, deployment_gate: "BLOCKED" };
   }
 
   add(nonEmptyString(staging.name), "Staging Worker name is required");
   add(nonEmptyString(production.name), "Production Worker name is required");
   add(staging.name !== production.name, "Worker name must differ from production");
+  add(staging.workers_dev === false, "workers_dev must be false for staging AMPHETAMIN");
+  add(staging.preview_urls === false, "preview_urls must be false for staging AMPHETAMIN");
 
-  add(staging.workers_dev === false, "workers_dev must be false for staging");
-  add(staging.preview_urls === false, "preview_urls must be false for staging");
+  const stagingGroupBinding = bindings(staging.services, "GROUP");
+  const productionGroupBinding = bindings(production.services, "GROUP");
+  add(stagingGroupBinding.length === 1 && nonEmptyString(stagingGroupBinding[0]?.service),
+    "Exactly one GROUP Service Binding is required");
+  add(productionGroupBinding.length === 1 && nonEmptyString(productionGroupBinding[0]?.service),
+    "Exactly one production GROUP Service Binding is required for comparison");
 
-  const stagingGroup = firstBinding(staging.services, "GROUP");
-  const productionGroup = firstBinding(production.services, "GROUP");
-  add(Boolean(stagingGroup && nonEmptyString(stagingGroup.service)),
-    "GROUP Service Binding is required");
-  add(Boolean(productionGroup && nonEmptyString(productionGroup.service)),
-    "Production GROUP Service Binding is required for comparison");
-  if (stagingGroup && productionGroup) {
-    add(stagingGroup.service !== productionGroup.service,
-      "GROUP Service Binding target must differ from production");
+  add(nonEmptyString(stagingGroup.name), "Staging GROUP Worker name is required");
+  add(nonEmptyString(productionGroup.name), "Production GROUP Worker name is required");
+  add(stagingGroup.name !== productionGroup.name, "GROUP Worker name must differ from production");
+  add(staging.workers_dev === false, "workers_dev must be false for staging AMPHETAMIN");
+  add(stagingGroup.workers_dev === false, "GROUP workers_dev must be false");
+  add(stagingGroup.preview_urls === false, "GROUP preview_urls must be false");
+  add(!Array.isArray(stagingGroup.routes) || stagingGroup.routes.length === 0,
+    "GROUP routes must be absent; GROUP is Service-Binding-only");
+  add(stagingGroup.custom_domain !== true, "GROUP custom_domain must not expose a public hostname");
+
+  if (stagingGroupBinding.length === 1) {
+    add(stagingGroupBinding[0].service === stagingGroup.name,
+      "GROUP Service Binding target must match the staging GROUP Worker name");
+    if (productionGroupBinding.length === 1) {
+      add(stagingGroupBinding[0].service !== productionGroupBinding[0].service,
+        "GROUP Service Binding target must differ from production");
+    }
   }
 
-  const stagingDb = firstBinding(staging.d1_databases, "RUNTIME_DB");
-  const productionDb = firstBinding(production.d1_databases, "RUNTIME_DB");
-  add(Boolean(stagingDb && nonEmptyString(stagingDb.database_id)),
-    "RUNTIME_DB D1 binding with database_id is required");
-  add(Boolean(stagingDb && nonEmptyString(stagingDb.database_name)),
+  const stagingAmpDb = bindings(staging.d1_databases, "RUNTIME_DB");
+  const productionAmpDb = bindings(production.d1_databases, "RUNTIME_DB");
+  const stagingGroupDb = bindings(stagingGroup.d1_databases, "DB");
+  const productionGroupDb = bindings(productionGroup.d1_databases, "DB");
+  add(stagingAmpDb.length === 1 && nonEmptyString(stagingAmpDb[0]?.database_id),
+    "Exactly one RUNTIME_DB D1 binding with database_id is required");
+  add(stagingAmpDb.length === 1 && nonEmptyString(stagingAmpDb[0]?.database_name),
     "RUNTIME_DB D1 binding with database_name is required");
-  add(Boolean(productionDb && nonEmptyString(productionDb.database_id)),
+  add(productionAmpDb.length === 1 && nonEmptyString(productionAmpDb[0]?.database_id),
     "Production RUNTIME_DB D1 binding is required for comparison");
-  if (stagingDb && productionDb) {
-    add(stagingDb.database_id !== productionDb.database_id,
+  add(stagingGroupDb.length === 1 && nonEmptyString(stagingGroupDb[0]?.database_id),
+    "Exactly one staging GROUP DB binding is required");
+  add(productionGroupDb.length === 1 && nonEmptyString(productionGroupDb[0]?.database_id),
+    "Production GROUP DB binding is required for comparison");
+
+  if (stagingAmpDb.length === 1 && productionAmpDb.length === 1) {
+    add(stagingAmpDb[0].database_id !== productionAmpDb[0].database_id,
       "D1 database ID must differ from production");
-    add(stagingDb.database_name !== productionDb.database_name,
+    add(stagingAmpDb[0].database_name !== productionAmpDb[0].database_name,
       "D1 database name must differ from production");
+  }
+  if (stagingGroupDb.length === 1 && productionGroupDb.length === 1) {
+    add(stagingGroupDb[0].database_id !== productionGroupDb[0].database_id,
+      "GROUP D1 database ID must differ from production");
+  }
+  if (stagingAmpDb.length === 1 && stagingGroupDb.length === 1) {
+    add(stagingAmpDb[0].database_id === stagingGroupDb[0].database_id &&
+      stagingAmpDb[0].database_name === stagingGroupDb[0].database_name,
+    "AMPHETAMIN and GROUP must share the same staging D1 database");
+  }
+  if (productionAmpDb.length === 1 && productionGroupDb.length === 1) {
+    add(productionAmpDb[0].database_id === productionGroupDb[0].database_id &&
+      productionAmpDb[0].database_name === productionGroupDb[0].database_name,
+    "Production AMPHETAMIN and GROUP must share the same production D1 database for comparison");
   }
 
   for (const key of ["COMPUTE_TENANT_ID", "COMPUTE_PROJECT_ID"]) {
@@ -164,30 +237,47 @@ export function validateStagingConfig(staging, production) {
 }
 
 export async function runStagingPreflight({
-  stagingPath = "wrangler.staging.toml",
-  productionPath = "wrangler.toml"
+  stagingPath = "AMPHETAMIN/wrangler.staging.toml",
+  productionPath = "AMPHETAMIN/wrangler.toml",
+  groupStagingPath = "GROUP/wrangler.staging.jsonc",
+  groupProductionPath = "GROUP/wrangler.jsonc"
 } = {}) {
-  const [stagingSource, productionSource] = await Promise.all([
+  const [stagingSource, productionSource, groupStagingSource, groupProductionSource] = await Promise.all([
     readFile(stagingPath, "utf8"),
-    readFile(productionPath, "utf8")
+    readFile(productionPath, "utf8"),
+    readFile(groupStagingPath, "utf8"),
+    readFile(groupProductionPath, "utf8")
   ]);
   const result = validateStagingConfig(
     parseWranglerToml(stagingSource),
-    parseWranglerToml(productionSource)
+    parseWranglerToml(productionSource),
+    parseWranglerJsonc(groupStagingSource),
+    parseWranglerJsonc(groupProductionSource)
   );
-  return { staging_config: stagingPath, production_config: productionPath, ...result };
+  return {
+    staging_config: stagingPath,
+    production_config: productionPath,
+    group_staging_config: groupStagingPath,
+    group_production_config: groupProductionPath,
+    ...result
+  };
 }
 
 const invokedPath = process.argv[1] ? resolve(process.argv[1]) : "";
 if (invokedPath && pathToFileURL(invokedPath).href === import.meta.url) {
   const args = process.argv.slice(2);
-  const stagingIndex = args.indexOf("--staging");
-  const productionIndex = args.indexOf("--production");
-  const stagingPath = stagingIndex >= 0 ? args[stagingIndex + 1] : "wrangler.staging.toml";
-  const productionPath = productionIndex >= 0 ? args[productionIndex + 1] : "wrangler.toml";
+  const valueAfter = (flag, fallback) => {
+    const index = args.indexOf(flag);
+    return index >= 0 ? args[index + 1] : fallback;
+  };
 
   try {
-    const report = await runStagingPreflight({ stagingPath, productionPath });
+    const report = await runStagingPreflight({
+      stagingPath: valueAfter("--staging", "AMPHETAMIN/wrangler.staging.toml"),
+      productionPath: valueAfter("--production", "AMPHETAMIN/wrangler.toml"),
+      groupStagingPath: valueAfter("--group-staging", "GROUP/wrangler.staging.jsonc"),
+      groupProductionPath: valueAfter("--group-production", "GROUP/wrangler.jsonc")
+    });
     process.stdout.write(JSON.stringify(report, null, 2) + "\n");
     if (!report.ok) process.exitCode = 1;
   } catch (error) {
