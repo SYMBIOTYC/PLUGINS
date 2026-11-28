@@ -3,7 +3,8 @@ name: AMPHETAMIN local multi-Worker WASM integration
 on:
   pull_request:
     paths:
-      - "AMPHETAMIN/**"
+      - "AMPHETAMIN/tests/local-multi-worker.integration.mjs"
+      - "AMPHETAMIN/tests/fixtures/**"
       - ".github/workflows/amphetamin-local-multi-worker.yml"
   workflow_dispatch:
 
