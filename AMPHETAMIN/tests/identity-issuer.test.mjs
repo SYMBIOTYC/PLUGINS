@@ -203,7 +203,7 @@ test("WARP-style Access context with only aud still resolves the signed issuer a
     }
   }, { access: { aud: AUD } });
   assert.equal(response.status, 200);
-  assert.equal(principal.actor_id, `access:${createHash("sha256").update(`${ISSUER_A}\\u0000warp-user-subject`).digest("hex")}`);
+  assert.equal(principal.actor_id, `access:${createHash("sha256").update(ISSUER_A + String.fromCharCode(0) + "warp-user-subject").digest("hex")}`);
 });
 
 test("issuer mismatch, audience mismatch, expiry, and missing subject fail closed", async () => {
