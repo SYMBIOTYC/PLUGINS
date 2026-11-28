@@ -7,6 +7,7 @@ preview_urls = false
 [vars]
 COMPUTE_TENANT_ID = "symbiotyc"
 COMPUTE_PROJECT_ID = "compute"
+MCP_ALLOWED_ORIGINS = "https://chatgpt.com,https://chat.openai.com"
 
 # Public hostname is protected by a Worker-level Cloudflare Access policy.
 # No route, custom domain, API token, or public GROUP endpoint is configured.
