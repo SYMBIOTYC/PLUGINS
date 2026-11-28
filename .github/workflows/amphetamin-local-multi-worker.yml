@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - "test/amphetamin-local-multi-worker-e2e"
+      - "feat/amphetamin-runtime-json-schema-gate"
     paths:
       - "AMPHETAMIN/tests/local-multi-worker.integration.mjs"
       - "AMPHETAMIN/tests/fixtures/**"
