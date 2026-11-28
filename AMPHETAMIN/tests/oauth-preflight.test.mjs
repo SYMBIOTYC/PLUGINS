@@ -62,3 +62,25 @@ test("rejects issuer mismatch, missing PKCE S256, and missing DCR endpoint", () 
     expectedResource: "https://mcp.example/mcp"
   }), /registration_endpoint/);
 });
+
+test("recognizes refresh_token grant as an equivalent refresh capability", () => {
+  const result = validateOAuthDiscovery({
+    resourceMetadata: {
+      resource: "https://mcp.example/mcp",
+      authorization_servers: ["https://mcp.example"]
+    },
+    authorizationServerMetadata: {
+      issuer: "https://mcp.example",
+      authorization_endpoint: "https://mcp.example/authorize",
+      token_endpoint: "https://mcp.example/token",
+      registration_endpoint: "https://mcp.example/register",
+      token_endpoint_auth_methods_supported: ["none"],
+      grant_types_supported: ["authorization_code", "refresh_token"],
+      code_challenge_methods_supported: ["S256"]
+    },
+    expectedResource: "https://mcp.example/mcp"
+  });
+  assert.equal(result.offline_access, false);
+  assert.equal(result.refresh_token_grant_supported, true);
+  assert.equal(result.refresh_token_capable, true);
+});
