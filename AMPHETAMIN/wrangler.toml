@@ -9,3 +9,9 @@ preview_urls = false
 [[services]]
 binding = "GROUP"
 service = "symbiotyc-group-control-plane"
+
+
+[[d1_databases]]
+binding = "RUNTIME_DB"
+database_name = "symbiotyc-group-compute-state"
+database_id = "633d7c14-d335-426c-be7e-2168a43171bc"
