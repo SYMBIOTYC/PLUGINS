@@ -64,19 +64,14 @@ async function getAccessIdentity(request, ctx, env) {
     !ctx?.access ||
     typeof audience !== "string" ||
     !audience.trim() ||
-    !issuer ||
-    typeof ctx.access.getIdentity !== "function"
+    !issuer
   ) return null;
 
   try {
     // ctx.access is Cloudflare's authenticated-request attestation. Cloudflare
     // validates the Access token before creating this context; the assertion
-    // supplies the signed issuer/subject claims not exposed by ctx.access.aud.
-    const accessIdentity = await ctx.access.getIdentity();
-    if (!accessIdentity || typeof accessIdentity !== "object" || Array.isArray(accessIdentity)) {
-      return null;
-    }
-
+    // supplies the issuer/subject claims not exposed by ctx.access.aud. WARP
+    // requests may expose only aud on ctx.access, so getIdentity() is optional.
     const assertion = request.headers.get("cf-access-jwt-assertion");
     if (!assertion) return null;
     const parts = assertion.split(".");
