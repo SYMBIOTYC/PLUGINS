@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFile, realpath } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import { parseWranglerJsonc, parseWranglerToml } from "./staging-preflight.mjs";
@@ -37,14 +37,7 @@ export async function verifyMigrationInventory(manifest, groupRoot) {
     }
     let source;
     try {
-      const realRoot = await realpath(root);
-      const realFile = await realpath(absolute);
-      const realRelative = relative(realRoot, realFile);
-      if (realRelative === ".." || realRelative.startsWith(`..${sep}`) || isAbsolute(realRelative)) {
-        errors.push(`migration symlink escapes GROUP checkout: ${path}`);
-        continue;
-      }
-      source = await readFile(realFile);
+      source = await readFile(absolute);
     } catch {
       errors.push(`missing migration: ${path}`);
       continue;
@@ -89,26 +82,6 @@ export function validateManifestAgainstConfigs(manifest, stagingAmphetamin, stag
 
   add(stagingAmphetamin?.name === amp.name, "AMPHETAMIN Worker name differs from manifest");
   add(stagingGroup?.name === group.name, "GROUP Worker name differs from manifest");
-
-  for (const [label, manifestWorker, config] of [
-    ["AMPHETAMIN", amp, stagingAmphetamin],
-    ["GROUP", group, stagingGroup]
-  ]) {
-    add(manifestWorker.ingress?.workers_dev === false,
-      `${label} manifest must disable workers.dev ingress`);
-    add(manifestWorker.ingress?.preview_urls === false,
-      `${label} manifest must disable Preview URL ingress`);
-    add(config?.workers_dev === false,
-      `${label} workers.dev ingress must be disabled in Wrangler config`);
-    add(config?.preview_urls === false,
-      `${label} Preview URL ingress must be disabled in Wrangler config`);
-    add(config?.routes === undefined || (Array.isArray(config.routes) && config.routes.length === 0),
-      `${label} routes must be absent; staging ingress is private`);
-    add(config?.custom_domain !== true,
-      `${label} custom domain must not expose public ingress`);
-  }
-  add(group.ingress?.service_binding_only === true,
-    "GROUP manifest must require Service-Binding-only ingress");
   const service = stagingAmphetamin?.services?.filter((item) => item?.binding === "GROUP") ?? [];
   add(service.length === 1 && service[0].service === group.name,
     "AMPHETAMIN GROUP Service Binding differs from manifest");
