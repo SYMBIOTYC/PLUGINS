@@ -13,7 +13,7 @@ const claims = {
   request_id: "8c3f3e26-91a6-4e0e-a5f2-2b8e8a9f0b11",
   tool_id: "symbiotyc.group",
   invocation_id: "submit_job",
-  operation_id: "job.submit",
+  operation_id: "image.render",
   side_effect: "write",
   request_hash: "a".repeat(64)
 };
@@ -48,7 +48,7 @@ test("consumes only a matching submit approval using a consume-only principal", 
   assert.deepEqual(decodePrincipal(captured.headers.get("x-symbiotyc-principal")).scopes, ["compute:approvals:consume"]);
   assert.deepEqual(await captured.json(), {
     action: "job.submit",
-    operation_id: "job.submit",
+    operation_id: "image.render",
     request_hash: claims.request_hash
   });
 });
@@ -57,7 +57,7 @@ test("rejects mismatched operation, invocation, side effect, malformed hash, and
   let called = false;
   const env = { GROUP_APPROVALS_LIVE: "true", GROUP: { fetch: async () => { called = true; return Response.json({}); } } };
   const verify = createGroupApprovalVerifier(env, principal);
-  assert.equal(await verify(approvalId, { ...claims, operation_id: "job.cancel" }), false);
+  assert.equal(await verify(approvalId, { ...claims, operation_id: "not a valid operation" }), false);
   assert.equal(await verify(approvalId, { ...claims, invocation_id: "get_job" }), false);
   assert.equal(await verify(approvalId, { ...claims, side_effect: "read" }), false);
   assert.equal(await verify(approvalId, { ...claims, request_hash: "not-a-hash" }), false);
@@ -76,4 +76,22 @@ test("rejects a successful HTTP response that does not confirm this approval was
 test("propagates GROUP failures so Tool Runtime can fail closed", async () => {
   const env = { GROUP_APPROVALS_LIVE: "true", GROUP: { fetch: async () => { throw new Error("unavailable"); } } };
   await assert.rejects(createGroupApprovalVerifier(env, principal)(approvalId, claims), /unavailable/);
+});
+
+test("consumes a cancel approval only for the fixed job.cancel operation", async () => {
+  let captured;
+  const env = {
+    GROUP_APPROVALS_LIVE: "true",
+    GROUP: { fetch: async request => {
+      captured = request;
+      return Response.json({ approval_id: approvalId, status: "consumed" });
+    } }
+  };
+  const cancelClaims = { ...claims, invocation_id: "cancel_job", operation_id: "job.cancel" };
+  assert.equal(await createGroupApprovalVerifier(env, principal)(approvalId, cancelClaims), true);
+  assert.deepEqual(await captured.json(), {
+    action: "job.cancel",
+    operation_id: "job.cancel",
+    request_hash: claims.request_hash
+  });
 });
