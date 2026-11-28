@@ -137,6 +137,22 @@ export function validateManifestAgainstConfigs(manifest, stagingAmphetamin, stag
   add(manifest?.identity?.model === "UNDECIDED",
     "Manifest identity model must remain UNDECIDED until separately approved");
 
+  const secretReferences = manifest?.secret_references;
+  add(Array.isArray(secretReferences), "Manifest secret references must be an array");
+  if (Array.isArray(secretReferences)) {
+    for (const [index, reference] of secretReferences.entries()) {
+      add(reference !== null && typeof reference === "object" && !Array.isArray(reference),
+        `Manifest secret reference ${index} must be an object`);
+      if (reference === null || typeof reference !== "object" || Array.isArray(reference)) continue;
+      add(typeof reference.name === "string" && reference.name.trim().length > 0,
+        `Manifest secret reference ${index} must have a non-empty name`);
+      add(typeof reference.source === "string" && reference.source.trim().length > 0,
+        `Manifest secret reference ${index} must have a non-empty source`);
+      add(reference.value === null,
+        `Manifest secret reference ${index} must not contain a secret value; use null`);
+    }
+  }
+
   add(amp.ingress?.workers_dev === false, "Manifest must disable AMPHETAMIN workers.dev ingress");
   add(amp.ingress?.preview_urls === false, "Manifest must disable AMPHETAMIN Preview URLs");
   add(group.ingress?.workers_dev === false, "Manifest must disable GROUP workers.dev ingress");
