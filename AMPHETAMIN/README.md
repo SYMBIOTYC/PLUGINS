@@ -1,56 +1,61 @@
 # AMPHETAMIN MCP Edge
 
-**Status:** Existing Cloudflare Access-protected MCP Worker; compute tool source is being extended in this branch. Production compute activation remains gated by tenant policy, quotas, and Scheduler/Dispatcher readiness.
+**Status:** Existing Cloudflare Access-protected MCP Worker. This branch adds a TypeScript Tool/Skill Runtime parity layer for the read-only GROUP health operation. It does not create a second Worker.
 
-The live Worker name is `symbiotyc-amphetamin-mcp`. The established MCP hostname remains enabled behind the existing Cloudflare Access application. Preview URLs remain disabled. This branch extends the current `src/index.mjs` host and does not introduce a second Worker.
+## Live service boundary
 
-## Authentication and trust
+- Worker: `symbiotyc-amphetamin-mcp`
+- MCP endpoint: existing Access-protected `/mcp` hostname
+- Authentication: Cloudflare Access Managed OAuth and `ctx.access.getIdentity()`
+- Private compute backend: Service Binding `GROUP` → `symbiotyc-group-control-plane`
+- Durable runtime ledger: `RUNTIME_DB` → the existing EU GROUP D1 database
+- D1 migration: canonical `GROUP/migrations/0002_runtime_ledger.sql`, merged in GROUP PR #9 and applied to production.
 
-Cloudflare Managed OAuth is enabled on the Access application, with Dynamic Client Registration enabled. MCP clients authenticate through the standard Access-managed OAuth authorization-code flow; the Worker does not store or issue OAuth client secrets.
+## Runtime integration stage
 
-Every request to the public hostname remains protected by the existing Access application and exact owner allow policy. The Worker independently calls `ctx.access.getIdentity()`; it fails closed when there is no authenticated identity.
+The exposed `group.health` MCP tool now executes through:
 
-The Access application currently has one allowed owner identity. The Worker maps that identity to the configured SYMBIOTYC tenant/project:
-- tenant: `symbiotyc`
-- project: `compute`
-- actor: `access:<SHA-256 of normalized Access identity>`
+`MCP request → verified Skill → verified Tool/Invocation → trusted GROUP Service Binding adapter`
 
-The raw Access email is never forwarded to GROUP or written to logs/audit by AMPHETAMIN. Scopes are assigned server-side only: `compute:jobs:read`, `compute:jobs:write`, and `compute:jobs:cancel`. MCP tool arguments cannot supply or override tenant, project, actor, or scopes.
+The runtime layer includes strict request/schema validation, trusted server-side handlers, tenant-scoped D1 idempotency, append-only metadata-only audit, preflight validation, and unknown-outcome quarantine.
 
-This is a single-owner, single-project policy mapping, not a general multi-user IAM implementation. If the Access allow policy is broadened, identity-to-membership mapping and per-user/project authorization must be implemented and tested before enabling additional identities.
+This is a parity adapter implemented in TypeScript for the Cloudflare Worker. The original Python Tool/Skill Runtime remains authoritative in the PLUGINS root and is not imported by this Worker. The adapter is deliberately limited to the verified read-only health operation at this stage.
 
-## Private GROUP boundary
+## Tool availability
 
-AMPHETAMIN calls only through the `GROUP` Cloudflare Service Binding to `symbiotyc-group-control-plane`. GROUP has no public workers.dev or preview ingress. The caller principal is a server-generated assertion trusted only across this private binding; it is not a cryptographic credential and must never be accepted through a public route.
+- `group.health` — enabled through Skill Runtime and Tool Runtime.
+- Compute Job submission, capability reads, Job reads, and cancellation are temporarily withheld from this runtime-parity release. They must be reintroduced only after equivalent verified Tool/Skill definitions, scope checks, approval handling for state changes, and parity tests exist.
 
-No shared `API_TOKEN` is used between Assistant, AMPHETAMIN, and GROUP. No secret is stored in this repository.
+This staged reduction is intentional: no operation may bypass the runtime boundary merely to preserve a previous MCP tool listing.
 
-## MCP tool surface
+## Identity and trust
 
-The existing MCP `2025-03-26` initialize/tool protocol is preserved. The current source exposes:
+Cloudflare Access must authenticate the request before the Worker executes. The Worker maps the single owner identity to the configured `symbiotyc/compute` tenant/project and grants only `compute:read` in this release. Actor identity is pseudonymized as `access:<SHA-256>`; raw email is not forwarded to GROUP or written to audit.
 
-- `group.health` — read-only GROUP health probe.
-- `compute_capabilities` — read tenant/project quota, enabled operation policies, and actual component readiness.
-- `compute_submit_job` — submit a strict, bounded JobIntent only when GROUP says the tenant/project quota and operation policy permit it.
-- `compute_get_job` — tenant/project-scoped Job read.
-- `compute_cancel_job` — tenant/project-scoped cancellation request.
+This is a single-owner, single-project mapping, not general multi-tenant IAM. The Access allow policy must remain restricted to the intended owner. MCP arguments cannot supply tenant, project, actor, or scopes.
 
-## Lifecycle and safety semantics
+## D1 ledger
 
-The caller's stable idempotency key is forwarded unchanged. A timeout after Job submission returns `JOB_ACCEPTANCE_UNKNOWN` with that same key and no automatic POST retry. A `QUEUED` response means durable acceptance only; it does not mean execution started or completed.
+The production EU D1 database now contains:
+- `runtime_idempotency` — tenant-scoped Tool/Skill run claims and replay results;
+- `runtime_audit_events` — metadata-only append-only runtime events.
 
-The current GROUP database has no seeded tenant quota or enabled operation policy, so `compute_submit_job` remains closed by default. GROUP reports `dispatch_enabled=false`. Scheduler, Dispatcher, Worker lifecycle/heartbeat, result validation, and artifact pipeline remain unimplemented.
+Update/delete triggers protect the audit table. The migration is maintained canonically in the GROUP repository; do not create a competing migration history in this repository.
 
-## Runtime compatibility
+## Release and deployment
 
-The PLUGINS Tool/Skill Runtime remains Python in-process. The Cloudflare Worker does not import those modules or claim parity. Its compute tools currently call GROUP's Job API. A separately authenticated runtime bridge or a parity-tested TypeScript runtime adapter is still required before claiming Tool/Skill Runtime execution integration.
-
-## Tests and release
-
-Run from the repository root with Node.js 22:
+Run from repository root:
 
 ```sh
 node --test AMPHETAMIN/tests/*.test.mjs
 ```
 
-Production upgrade must preserve the live Access application, exact current allow policy, `workers.dev=true`, `preview_urls=false`, and GROUP Service Binding. Only the Worker source and non-secret server-side tenant/project vars are changed.
+Before upgrading the live Worker:
+1. pass the full Node test suite;
+2. verify D1 ledger integration against the real schema;
+3. preserve Access Managed OAuth, exact owner allow policy, `workers_dev=true`, `preview_urls=false`, GROUP Service Binding, and D1 binding;
+4. deploy the reviewed bundle;
+5. verify the Access-protected MCP initialize/tools/list and a real `group.health` call;
+6. confirm the D1 audit row and idempotency row are recorded without secrets or raw email.
+
+No production Worker upgrade is part of this source PR.
