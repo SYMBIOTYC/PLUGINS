@@ -157,7 +157,7 @@ export async function runOAuthPreflight({
   const discovery = validateOAuthDiscovery({
     resourceMetadata,
     authorizationServerMetadata,
-    expectedResource: mcp.origin
+    expectedResource: mcp.href
   });
 
   return {
