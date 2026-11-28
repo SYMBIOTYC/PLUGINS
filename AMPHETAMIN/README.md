@@ -1,6 +1,6 @@
 # AMPHETAMIN MCP Edge
 
-**Status:** Initial production edge implementation; compute operations remain disabled.
+**Status:** Live Access-protected MCP edge deployed; only the read-only GROUP health tool is exposed. Compute operations remain disabled.
 
 This Worker is a stateless Streamable HTTP MCP endpoint at `POST /mcp`. It requires Cloudflare Access authentication at the Worker boundary and independently rejects requests without an Access identity in `ctx.access`.
 
@@ -12,8 +12,8 @@ No job creation, cancellation, execution, shell, dynamic URL, or arbitrary tool 
 
 ## Security and deployment
 
-- Worker-level Cloudflare Access policy is required for every public hostname.
-- `workers.dev` is enabled only after the Access application is created and verified; Preview URLs stay disabled.
+- A hostname-based Cloudflare Access application protects `symbiotyc-amphetamin-mcp.vladyslavchaplygin.workers.dev` with an exact allow policy for the linked account owner.
+- The `workers.dev` hostname is enabled only behind that Access application; Preview URLs are disabled.
 - GROUP is called only through the `GROUP` Service Binding. GROUP's own `workers.dev` and Preview URLs remain disabled.
 - Tenant, project, actor and scopes are not accepted from MCP tool arguments. A future compute tool requires a verified Access identity-to-membership mapping and the GROUP principal contract.
 - No shared `API_TOKEN` is used.
@@ -31,12 +31,20 @@ Run from this directory:
 npm test
 ```
 
-## Production prerequisites
+## Production deployment state
 
-1. Create the Cloudflare Access organization and a Worker-level allow policy for the intended owner identity.
-2. Deploy with the GROUP Service Binding.
-3. Confirm the Access policy protects production and preview URLs before enabling the public Worker hostname.
-4. Verify MCP initialize, tools/list, and group.health through the Access-protected endpoint.
-5. Keep compute operations disabled until identity membership, Tool/Skill Runtime compatibility, durable approvals/idempotency/audit and GROUP end-to-end tests are complete.
+- Cloudflare Access organization and exact-email allow policy are configured.
+- Worker is deployed with the private `GROUP` Service Binding.
+- `workers.dev` is enabled and protected by Access; preview URLs remain disabled.
+- Live Worker settings confirm the `GROUP` binding.
+- A full authenticated MCP client handshake and live `group.health` result have not yet been observed from an external client.
+
+## Remaining production gates
+
+1. Verify MCP initialize, tools/list, and group.health through an authenticated external MCP client.
+2. Add server-side identity-to-tenant/project membership mapping and enforce scopes before exposing job operations.
+3. Resolve the Python Tool/Skill Runtime compatibility boundary with a separately authenticated runtime service or a parity-verified TypeScript port.
+4. Implement durable approvals, idempotency, audit, timeout/unknown-outcome handling and reconciliation.
+5. Keep compute operations disabled until tenant-isolation negatives and full GROUP end-to-end tests pass.
 
 See the [Cloud Wiki AMPHETAMIN architecture](https://github.com/SYMBIOTYC/SYMBIOTYC-CLOUD-WIKI/blob/main/Architecture/Compute-Infrastructure/AMPHETAMIN-MCP.md).
