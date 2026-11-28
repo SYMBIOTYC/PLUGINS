@@ -70,3 +70,17 @@ Before exposing tools, compare and test these options:
 3. A TypeScript port of Tool/Skill Runtime with behavioral parity tests before replacing or duplicating the Python implementation.
 
 The compatibility spike must prove SDK/runtime support, authentication and principal derivation, private GROUP reachability, durable idempotency, approval verification, metadata-only audit, timeout/unknown-outcome handling, and tenant isolation. Do not enable a tool that invokes GROUP until the selected topology passes integration tests. See the [Cloud Wiki architecture decision and gates](https://github.com/SYMBIOTYC/SYMBIOTYC-CLOUD-WIKI/blob/main/Architecture/Compute-Infrastructure/AMPHETAMIN-MCP.md).
+
+
+## Superseding production verification — 2026-11-28
+
+This audit captured an earlier placeholder-only state and is superseded by the live deployment verified on 2026-11-28.
+
+- The live Cloudflare Worker is `symbiotyc-amphetamin-mcp`, with an owner-only Cloudflare Access application and OAuth/Dynamic Client Registration enabled.
+- The deployed source is maintained in this repository under `AMPHETAMIN/` and was merged in [PR #16](https://github.com/SYMBIOTYC/PLUGINS/pull/16).
+- The deployed Worker routes only read-only `group.health` through the TypeScript Skill Runtime → Tool Runtime adapter, D1-backed idempotency/audit, and the private GROUP Service Binding.
+- The four prior compute tools are withheld in this deployment. They require equivalent Tool/Skill definitions, scopes, approval verification for state-changing operations, and end-to-end tests before re-exposure.
+- The private Plugin Creator catalog `SYMBIOTYC-PLUGINS/plugins/amphetamine` remains a placeholder and does not represent the deployed Cloudflare MCP Worker.
+- GROUP PR #9 added and applied the canonical D1 runtime ledger migration. The runtime tables and append-only triggers are present in production.
+
+The previous OAuth bootstrap plan using a custom Workers OAuth Provider and dedicated OAUTH_KV is superseded. The live Worker relies on Cloudflare Access Managed OAuth and `ctx.access.getIdentity()`; no Access client secret is stored in the Worker source. See [AMPHETAMIN live deployment verification](https://github.com/SYMBIOTYC/SYMBIOTYC-CLOUD-WIKI/blob/main/Architecture/Compute-Infrastructure/Live-Deployment-Verification-2026-11-28.md).

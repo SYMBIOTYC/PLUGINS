@@ -1,6 +1,6 @@
 # AMPHETAMIN MCP Edge
 
-**Status:** Existing Cloudflare Access-protected MCP Worker. This branch adds a TypeScript Tool/Skill Runtime parity layer for the read-only GROUP health operation. It does not create a second Worker.
+**Status:** Live Cloudflare Access-protected MCP Worker. PR #16 is merged and deployed; the active Worker version is `f79793c3-0c0c-48e6-8d26-5990fbbf06a3` (100% traffic).
 
 ## Live service boundary
 
@@ -58,4 +58,4 @@ Before upgrading the live Worker:
 5. verify the Access-protected MCP initialize/tools/list and a real `group.health` call;
 6. confirm the D1 audit row and idempotency row are recorded without secrets or raw email.
 
-No production Worker upgrade is part of this source PR.
+Production deployment is complete. Cloudflare read-back confirms the active version, D1 binding, private GROUP binding, owner-only Access policy, OAuth/DCR configuration, `workers.dev=true`, and `previews_enabled=false`. A full authenticated external MCP handshake and a production `group.health` invocation remain outstanding; do not claim end-to-end request success until those are observed.
