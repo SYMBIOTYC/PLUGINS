@@ -42,3 +42,21 @@ The validator compares both staging Workers with their production counterparts. 
 The current production config is used only as a comparison baseline. Do not create a staging config by copying production IDs. A future staging config must reference separately provisioned staging resources.
 
 **Important boundary:** a passing local configuration check does not verify Cloudflare Access. The report always sets `access_policy_verified: false` and identifies external Access application, hostname, and policy verification as a separate gate. Do not deploy staging until that external gate is independently confirmed and approved.
+
+
+## Staging provisioning manifest
+
+The proposed resource topology and approval gates are defined in:
+- `config/staging-provisioning-manifest.template.json`
+- `config/staging-provisioning-manifest.schema.json`
+
+The template proposes these logical names (not yet provisioned or confirmed unique):
+- AMPHETAMIN Worker: `symbiotyc-amphetamin-mcp-staging`
+- GROUP Worker: `symbiotyc-group-control-plane-staging`
+- Shared D1: `symbiotyc-group-compute-state-staging`
+
+The manifest requires AMPHETAMIN's `GROUP` Service Binding to target the staging GROUP Worker and both `RUNTIME_DB` and `DB` bindings to reference the same dedicated staging D1. GROUP remains Service-Binding-only, with workers.dev, Preview URLs, routes, and custom domains disabled. AMPHETAMIN is expected to be reached only through a hostname protected by a separately verified Cloudflare Access application and explicit allow policy.
+
+Unknown resource IDs, hostname, Access application/policy IDs, tenant/project values, and identity mapping remain null or undecided. The identity model must be explicitly decided before provisioning. Secret references are intentionally empty: the inspected Worker entrypoints declare no secret bindings, and the full runtime dependency graph still requires an audit. Never place credential values in this manifest.
+
+All authorization and deployment gates default to false. This is a planning artifact only; it does not provision resources, configure Access, apply migrations, or deploy.
