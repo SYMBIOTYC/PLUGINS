@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readFile, realpath } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import { parseWranglerJsonc, parseWranglerToml } from "./staging-preflight.mjs";
@@ -16,28 +16,85 @@ export function computeGitBlobSha(content) {
  */
 export async function verifyMigrationInventory(manifest, groupRoot) {
   const errors = [];
-  const entries = manifest?.resources?.d1?.expected_migration_blobs;
+  const d1 = manifest?.resources?.d1;
+  const entries = d1?.expected_migration_blobs;
+  const expected = d1?.expected_migrations;
   if (!Array.isArray(entries) || entries.length === 0) {
     return { ok: false, errors: ["Manifest migration inventory is missing"] };
   }
+  const expectedValid = Array.isArray(expected) && expected.length > 0 &&
+    expected.every((name) => typeof name === "string" && name.length > 0);
+  if (!expectedValid) {
+    errors.push("Manifest expected migration list is missing or invalid");
+  }
 
-  const root = resolve(groupRoot);
+  const expectedSet = new Set(expectedValid ? expected : []);
+  const seenNames = new Set();
+  const seenPaths = new Set();
+  if (expectedValid && expectedSet.size !== expected.length) {
+    errors.push("Manifest expected migration list contains duplicates");
+  }
   for (const entry of entries) {
     const path = entry?.path;
-    if (typeof path !== "string" || !path.startsWith(`migrations/`) ||
+    if (typeof path !== "string" || !path.startsWith("migrations/") ||
         isAbsolute(path) || path.split(/[\\/]/).includes("..")) {
       errors.push(`unsafe migration path: ${String(path)}`);
       continue;
     }
+    const name = path.slice("migrations/".length);
+    if (!name || name.includes("/") || name.includes("\\")) {
+      errors.push(`unsafe migration path: ${path}`);
+      continue;
+    }
+    if (seenPaths.has(path) || seenNames.has(name)) {
+      errors.push(`duplicate migration inventory entry: ${path}`);
+      continue;
+    }
+    seenPaths.add(path);
+    seenNames.add(name);
+    if (!expectedSet.has(name)) {
+      errors.push(`unexpected migration inventory entry: ${path}`);
+    }
+  }
+  for (const name of expectedSet) {
+    if (!seenNames.has(name)) errors.push(`expected migration missing from inventory: ${name}`);
+  }
+  for (const name of seenNames) {
+    if (!expectedSet.has(name)) errors.push(`unexpected migration inventory entry: ${name}`);
+  }
+  if (expectedValid && entries.length !== expected.length) {
+    errors.push("Migration blob inventory count does not match expected migrations");
+  }
+
+  let root;
+  let migrationsRoot;
+  try {
+    root = await realpath(resolve(groupRoot));
+    migrationsRoot = await realpath(resolve(root, "migrations"));
+  } catch {
+    return { ok: false, errors: [...errors, "GROUP migrations directory is missing"] };
+  }
+
+  for (const entry of entries) {
+    const path = entry?.path;
+    if (typeof path !== "string" || !path.startsWith("migrations/") ||
+        isAbsolute(path) || path.split(/[\\/]/).includes("..")) continue;
     const absolute = resolve(root, path);
     const rel = relative(root, absolute);
     if (rel.startsWith(`..${sep}`) || rel === ".." || isAbsolute(rel)) {
       errors.push(`unsafe migration path: ${path}`);
       continue;
     }
+    let actualPath;
     let source;
     try {
-      source = await readFile(absolute);
+      actualPath = await realpath(absolute);
+      const realRel = relative(migrationsRoot, actualPath);
+      if (realRel.startsWith(`..${sep}`) || realRel === ".." || isAbsolute(realRel)) {
+        errors.push(`migration symlink escapes GROUP migrations directory: ${path}`);
+        continue;
+      }
+      source = await readFile(actualPath);
     } catch {
       errors.push(`missing migration: ${path}`);
       continue;
@@ -79,6 +136,51 @@ export function validateManifestAgainstConfigs(manifest, stagingAmphetamin, stag
     "Manifest Access policy verification must remain false");
   add(manifest?.identity?.model === "UNDECIDED",
     "Manifest identity model must remain UNDECIDED until separately approved");
+
+  const secretReferences = manifest?.secret_references;
+  add(Array.isArray(secretReferences), "Manifest secret references must be an array");
+  if (Array.isArray(secretReferences)) {
+    for (const [index, reference] of secretReferences.entries()) {
+      add(reference !== null && typeof reference === "object" && !Array.isArray(reference),
+        `Manifest secret reference ${index} must be an object`);
+      if (reference === null || typeof reference !== "object" || Array.isArray(reference)) continue;
+      add(typeof reference.name === "string" && reference.name.trim().length > 0,
+        `Manifest secret reference ${index} must have a non-empty name`);
+      add(typeof reference.source === "string" && reference.source.trim().length > 0,
+        `Manifest secret reference ${index} must have a non-empty source`);
+      add(reference.value === null,
+        `Manifest secret reference ${index} must not contain a secret value; use null`);
+    }
+  }
+
+  add(amp.ingress?.workers_dev === false, "Manifest must disable AMPHETAMIN workers.dev ingress");
+  add(amp.ingress?.preview_urls === false, "Manifest must disable AMPHETAMIN Preview URLs");
+  add(group.ingress?.workers_dev === false, "Manifest must disable GROUP workers.dev ingress");
+  add(group.ingress?.preview_urls === false, "Manifest must disable GROUP Preview URLs");
+
+  add(Array.isArray(amp.ingress?.public_routes) && amp.ingress.public_routes.length === 0,
+    "Manifest AMPHETAMIN public route inventory must be empty");
+  add(Array.isArray(amp.ingress?.custom_domains) && amp.ingress.custom_domains.length === 0,
+    "Manifest AMPHETAMIN custom domain inventory must be empty");
+  add(Array.isArray(group.ingress?.routes) && group.ingress.routes.length === 0,
+    "Manifest GROUP routes must be empty");
+  add(Array.isArray(group.ingress?.custom_domains) && group.ingress.custom_domains.length === 0,
+    "Manifest GROUP custom domains must be empty");
+  add(group.ingress?.service_binding_only === true,
+    "Manifest GROUP must be declared Service-Binding-only");
+
+  add(stagingAmphetamin?.workers_dev === false, "AMPHETAMIN workers.dev ingress must be disabled");
+  add(stagingAmphetamin?.preview_urls === false, "AMPHETAMIN Preview URLs must be disabled");
+
+  add(stagingAmphetamin?.routes === undefined || (Array.isArray(stagingAmphetamin.routes) && stagingAmphetamin.routes.length === 0),
+    "AMPHETAMIN routes must be absent until the Access hostname and policy are approved");
+  add(stagingAmphetamin?.custom_domain !== true, "AMPHETAMIN custom-domain ingress must remain disabled until Access verification");
+
+  add(stagingGroup?.workers_dev === false, "GROUP workers.dev ingress must be disabled");
+  add(stagingGroup?.preview_urls === false, "GROUP Preview URLs must be disabled");
+  add(stagingGroup?.routes === undefined || (Array.isArray(stagingGroup.routes) && stagingGroup.routes.length === 0),
+    "GROUP routes must be absent; GROUP is Service-Binding-only");
+  add(stagingGroup?.custom_domain !== true, "GROUP custom domain ingress must be disabled");
 
   add(stagingAmphetamin?.name === amp.name, "AMPHETAMIN Worker name differs from manifest");
   add(stagingGroup?.name === group.name, "GROUP Worker name differs from manifest");
