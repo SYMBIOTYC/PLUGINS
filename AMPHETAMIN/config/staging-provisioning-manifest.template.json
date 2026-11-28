@@ -1,0 +1,160 @@
+{
+  "manifest_version": "1.0.0",
+  "kind": "SymbiotycStagingProvisioningManifest",
+  "metadata": {
+    "name": "amphetamin-group-staging",
+    "environment": "staging",
+    "status": "PROPOSED_NOT_PROVISIONED",
+    "provisioning_authorized": false,
+    "deploy_authorized": false,
+    "production_baseline": {
+      "amphetamin_repository": "SYMBIOTYC/PLUGINS",
+      "amphetamin_commit": "51f14d4bcba9d5385a62670519ad751dcf07686d",
+      "group_repository": "SYMBIOTYC/GROUP",
+      "group_commit": "5e56635c340a1e5dff871fe8e148c00ce960328a"
+    },
+    "naming_note": "Proposed logical names only. Confirm account-wide uniqueness before provisioning.",
+    "secret_inventory_note": "No secret bindings are declared in the inspected AMPHETAMIN entrypoint or GROUP Worker entrypoint; audit the complete runtime dependency graph before provisioning. Never store secret values here."
+  },
+  "resources": {
+    "workers": {
+      "amphetamin": {
+        "name": "symbiotyc-amphetamin-mcp-staging",
+        "ingress": {
+          "workers_dev": false,
+          "preview_urls": false,
+          "public_routes": [],
+          "custom_domains": []
+        },
+        "bindings": {
+          "GROUP": {
+            "type": "service",
+            "service": "symbiotyc-group-control-plane-staging"
+          },
+          "RUNTIME_DB": {
+            "type": "d1",
+            "database_name": "symbiotyc-group-compute-state-staging",
+            "database_id": null
+          }
+        },
+        "vars": {
+          "COMPUTE_TENANT_ID": null,
+          "COMPUTE_PROJECT_ID": null,
+          "MCP_ALLOWED_ORIGINS": "https://chatgpt.com,https://chat.openai.com"
+        }
+      },
+      "group": {
+        "name": "symbiotyc-group-control-plane-staging",
+        "ingress": {
+          "workers_dev": false,
+          "preview_urls": false,
+          "routes": [],
+          "custom_domains": [],
+          "service_binding_only": true
+        },
+        "bindings": {
+          "DB": {
+            "type": "d1",
+            "database_name": "symbiotyc-group-compute-state-staging",
+            "database_id": null
+          }
+        }
+      }
+    },
+    "d1": {
+      "name": "symbiotyc-group-compute-state-staging",
+      "database_id": null,
+      "consumers": [
+        "AMPHETAMIN.RUNTIME_DB",
+        "GROUP.DB"
+      ],
+      "migration_owner": "GROUP",
+      "apply_migrations_automatically": false,
+      "expected_migrations": [
+        "0001_compute_core.sql",
+        "0002_runtime_ledger.sql",
+        "0003_compute_approvals.sql",
+        "0004_amphetamin_activation_state.sql"
+      ],
+      "require_production_database_id_mismatch": true,
+      "require_production_database_name_mismatch": true,
+      "require_data_isolation": true,
+      "expected_migration_blobs": [
+        {
+          "path": "migrations/0001_compute_core.sql",
+          "git_blob_sha": "27ce7d91d81ffd26cf16012b7536d64b1bad6006"
+        },
+        {
+          "path": "migrations/0002_runtime_ledger.sql",
+          "git_blob_sha": "805f712000e2583fe789ab0268b88ae0e606a077"
+        },
+        {
+          "path": "migrations/0003_compute_approvals.sql",
+          "git_blob_sha": "913166ab0cc4ef1c200ff9bd50ee4965f51739ea"
+        },
+        {
+          "path": "migrations/0004_amphetamin_activation_state.sql",
+          "git_blob_sha": "a6274650e9e8bd7b2472e52739beb9a85b59f6c5"
+        }
+      ]
+    },
+    "access": {
+      "application_name": null,
+      "application_id": null,
+      "hostname": null,
+      "policy_verified": false,
+      "default_action": "BLOCK",
+      "allowed_subjects": [],
+      "allow_policy": null,
+      "requirements": [
+        "Attach an Access application to the exact staging AMPHETAMIN hostname.",
+        "Default deny; allow only explicitly approved subject identities.",
+        "Do not use a broad email-domain rule as the sole authorization condition.",
+        "Verify application and policy attachment to the exact hostname before edge tests.",
+        "Record policy ID, application ID, hostname, and read-back timestamp as approval evidence."
+      ],
+      "worker_target": "symbiotyc-amphetamin-mcp-staging"
+    }
+  },
+  "identity": {
+    "model": "UNDECIDED",
+    "allowed_subjects": [],
+    "tenant_id": null,
+    "project_id": null,
+    "subject_to_tenant_mapping": null,
+    "decision_required_before_provisioning": true,
+    "note": "Confirm single-tenant versus multi-tenant staging. Do not infer shared tenant/project mapping from current code."
+  },
+  "secret_references": [],
+  "provisioning_sequence": [
+    "Approve staging identity model and exact allowed Access subjects.",
+    "Read back production Worker names, Service Binding target, D1 ID, and Access policy as comparison evidence.",
+    "Confirm proposed staging names are unused across the Cloudflare account.",
+    "Provision one dedicated staging D1 database and record its returned ID.",
+    "Provision staging GROUP with workers.dev, Preview URLs, routes, and custom domains disabled.",
+    "Provision staging AMPHETAMIN with workers.dev and Preview URLs disabled; bind GROUP only to staging GROUP.",
+    "Bind AMPHETAMIN.RUNTIME_DB and GROUP.DB to the same staging D1.",
+    "Attach a default-deny Access application and explicit allow policy to the staging AMPHETAMIN hostname.",
+    "Populate non-secret tenant/project identifiers and secret references through approved secure interfaces.",
+    "Run paired repository preflight, verify migration hashes, and obtain separate migration and edge-test approvals.",
+    "Only after every gate passes, perform separately approved staging deployment and authenticated edge smoke tests."
+  ],
+  "approval": {
+    "production_comparison_complete": false,
+    "proposed_names_confirmed_unique": false,
+    "identity_model_approved": false,
+    "explicit_provisioning_approval": false,
+    "access_policy_verified": false,
+    "d1_migration_approval": false,
+    "edge_smoke_test_approval": false,
+    "deploy_allowed": false
+  },
+  "hard_stops": [
+    "Never reuse production Worker, Service Binding, D1 database, tenant ID, or project ID.",
+    "GROUP must have no public ingress; it is Service-Binding-only.",
+    "No staging deployment while Access policy verification is false.",
+    "No migrations without separate explicit approval.",
+    "Never store secret or credential values in this manifest.",
+    "No provisioning or deployment while authorization flags are false."
+  ]
+}

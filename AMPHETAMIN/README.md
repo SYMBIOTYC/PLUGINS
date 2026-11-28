@@ -1,86 +1,84 @@
-# AMPHETAMIN MCP Edge
 
-**Status:** Live Cloudflare Access-protected MCP Worker. PR #18 is merged and deployed; the active Worker version is `bd9f2f99-4b56-41b7-9e57-73efd98f4800` (100% traffic).
 
-## Live service boundary
+## Local multi-Worker WASM integration — CI
 
-- Worker: `symbiotyc-amphetamin-mcp`
-- MCP endpoint: existing Access-protected `/mcp` hostname
-- Authentication: Cloudflare Access Managed OAuth and `ctx.access.getIdentity()`
-- Private compute backend: Service Binding `GROUP` → `symbiotyc-group-control-plane`
-- Durable runtime ledger: `RUNTIME_DB` → the existing EU GROUP D1 database
-- D1 migration: canonical `GROUP/migrations/0002_runtime_ledger.sql`, merged in GROUP PR #9 and applied to production.
+The dedicated workflow `.github/workflows/amphetamin-local-multi-worker.yml` exercises the complete local request path:
 
-## Runtime integration stage
+`MCP JSON-RPC → AMPHETAMIN Worker → Wrangler Service Binding → GROUP Worker → compiled C/WASM evaluator → local D1`.
 
-The three exposed read-only MCP tools execute through:
+It checks out the GROUP implementation at the pinned PR #14 head, compiles `build/amphetamin_policy.wasm`, applies GROUP migrations to two separate local D1 databases, starts GROUP and AMPHETAMIN in separate local Wrangler sessions, waits for both sessions to become ready, and verifies the Service Binding is connected, and sends a real MCP `tools/call` request through the binding. The test-only AMPHETAMIN entrypoint injects a deterministic Access identity; the production entrypoint and Access policy are not modified.
 
-`MCP request → verified Skill → verified Tool/Invocation → trusted GROUP Service Binding adapter`
+Safety properties:
+- Wrangler is always started with `--local`; no `--remote` mode or remote binding is configured.
+- Both test D1 databases use synthetic UUIDs, not production database IDs.
+- The test fixture is not referenced by the production Worker configuration and is never deployed.
+- The GROUP checkout is pinned to commit `5e56635c340a1e5dff871fe8e148c00ce960328a`; update this pin only after reviewing a newer GROUP PR #14 head.
+- The integration test requires HTTP 200, a non-error MCP tool result, the full decision shape returned by the compiled WASM evaluator, and a fresh durable activation-state snapshot.
 
-The runtime layer includes strict request/schema validation, trusted server-side handlers, tenant-scoped D1 idempotency, append-only metadata-only audit, preflight validation, and unknown-outcome quarantine. A source-level GROUP approval consumer is now integrated into the Tool Runtime; it is gated by `GROUP_APPROVALS_LIVE=true`, requires an operation-bound approval ID, and uses a consume-only principal. The gate remains unset/false in production.
+Cloudflare documents local Service Binding discovery between separate Wrangler dev sessions. The first CI attempt used multi-config mode but Wrangler reported the AMPHETAMIN → GROUP binding as `[not connected]`; the MCP tool correctly failed closed with `OUTCOME_UNKNOWN`. The harness now starts the target GROUP session first and then the AMPHETAMIN caller in a separate Wrangler session, matching Cloudflare's documented local-development procedure.
 
-This is a parity adapter implemented in TypeScript for the Cloudflare Worker. The original Python Tool/Skill Runtime remains authoritative in the PLUGINS root and is not imported by this Worker. The deployed adapter currently exposes the three live verified read-only tools; PR #25 adds a fourth read-only activation-state tool on the feature branch, pending the GROUP API dependency; the approval consumer is source-integrated but is not part of the live Worker bundle.
 
-## Tool availability
+### Verified local end-to-end result — 2026-11-28
 
-- `group.health` — enabled through Skill Runtime and Tool Runtime.
-- `compute_capabilities` — enabled, read-only.
-- `compute_get_job` — enabled, read-only.
-- `compute_activation_state` — added on PR #25 as a read-only view of GROUP's durable activation/deployment-streak/burnout snapshot. It requires the GROUP PR #12 activation-state API and is not part of the live deployed tool surface until both changes are released.
-- `compute_activation_evaluate` — added on PR #26 as a policy-only evaluation call to GROUP `POST /v1/activation/evaluate` through the existing private Service Binding. It uses a server-derived service principal scoped only to `compute:activation:evaluate`; callers provide bounded telemetry, while GROUP supplies durable activation/burnout state and cryptographic randomness. The result does not dispatch jobs or provision Workers. It depends on GROUP PR #14 and is not live until both PRs are merged and released.
-- `compute_submit_job` and `compute_cancel_job` — withheld. Approval creation and write Tool/Skill definitions are not yet implemented; the live GROUP approval routes are unavailable.
+The local multi-Worker integration gate passed in [GitHub Actions run #46133940180](https://github.com/SYMBIOTYC/PLUGINS/actions/runs/46133940180), commit `b73bc1c2bb15a2ad8b6de12a7c3dbf0bce944040`.
 
-This staged reduction is intentional: no operation may bypass the runtime boundary merely to preserve a previous MCP tool listing.
+The run compiled the pinned GROUP C policy to WASM, passed the AMPHETAMIN unit/contract suite, applied both synthetic local D1 migration sets, and executed the real MCP `tools/call` request. Wrangler's logs show the GROUP Service Binding transitioning to `[connected]`; the caller then returned HTTP 200 for `POST /mcp`. The integration assertion verified a non-error MCP result, GROUP decision fields emitted by the WASM evaluator, and the initial activation-state snapshot read from local D1. The job concluded successfully.
 
-The policy evaluation tool is a telemetry what-if/evaluation surface, not an autonomous scaling trigger. Its caller-supplied telemetry must come from a trusted upstream controller before any future automated use; the current MCP interface does not schedule, dispatch, or provision work.
+This closes the local integration gate only. It does not prove live Cloudflare service-to-service connectivity, persistent staging behavior, production Access policy, production D1 correctness, or deployment readiness. The next gate is a separately isolated staging verification plan and security review; no staging resources or deployment are created by this result.
 
-## Identity and trust
 
-Cloudflare Access must authenticate the request before the Worker executes. The Worker maps the single owner identity to the configured `symbiotyc/compute` tenant/project. Read-only requests receive only the read scopes required by their Tool; the approval consumer independently constructs a GROUP principal containing only `compute:approvals:consume`. Actor identity is pseudonymized as `access:<SHA-256>`; raw email is not forwarded to GROUP or written to audit.
+## Staging configuration preflight
 
-This is a single-owner, single-project mapping, not general multi-tenant IAM. The Access allow policy must remain restricted to the intended owner. MCP arguments cannot supply tenant, project, actor, or scopes.
-
-## D1 ledger
-
-The production EU D1 database now contains:
-- `runtime_idempotency` — tenant-scoped Tool/Skill run claims and replay results;
-- `runtime_audit_events` — metadata-only append-only runtime events.
-
-Update/delete triggers protect the audit table. The migration is maintained canonically in the GROUP repository; do not create a competing migration history in this repository.
-
-## Release and deployment
-
-Run from repository root:
+The repository includes a fail-closed, read-only staging configuration validator. Run it from the `AMPHETAMIN` directory after checking out both repositories side by side:
 
 ```sh
-node --test AMPHETAMIN/tests/*.test.mjs
+npm run preflight:staging
 ```
 
-Before upgrading the live Worker:
-1. pass the full Node test suite;
-2. verify D1 ledger integration against the real schema;
-3. preserve Access Managed OAuth, exact owner allow policy, `workers_dev=true`, `preview_urls=false`, GROUP Service Binding, and D1 binding;
-4. deploy the reviewed bundle;
-5. verify the Access-protected MCP initialize/tools/list and a real `group.health` call;
-6. confirm the D1 audit row and idempotency row are recorded without secrets or raw email.
+Optional flags override the four inputs: `--staging`, `--production`, `--group-staging`, and `--group-production`.
 
-Production deployment is complete. Cloudflare read-back confirms the active version, D1 binding, private GROUP binding, owner-only Access policy, OAuth/DCR configuration, `workers.dev=true`, and `previews_enabled=false`. A full authenticated external MCP handshake and production read-only tool invocation remain outstanding; do not claim end-to-end request success until those are observed. The GROUP Worker remains on its pre-approval live version; the approval routes are not active there.
+The validator compares both staging Workers with their production counterparts. It rejects reuse of either Worker name, a production GROUP Service Binding target, a production D1 ID/name, or production tenant/project identifiers. It requires AMPHETAMIN and GROUP to share one dedicated staging D1 database, and requires the GROUP Worker to have `workers_dev = false`, `preview_urls = false`, and no routes or custom-domain ingress. The command does not create resources, apply migrations, change bindings, or deploy.
+
+The current production config is used only as a comparison baseline. Do not create a staging config by copying production IDs. A future staging config must reference separately provisioned staging resources.
+
+**Important boundary:** a passing local configuration check does not verify Cloudflare Access. The report always sets `access_policy_verified: false` and identifies external Access application, hostname, and policy verification as a separate gate. Do not deploy staging until that external gate is independently confirmed and approved.
 
 
-## Source approval verifier — merged, not deployed
+## Staging provisioning manifest
 
-[PLUGINS PR #21](https://github.com/SYMBIOTYC/PLUGINS/pull/21) is merged at `8b69c756d6a5e757126b6f0f326ec4f7dde8372d`. The AMPHETAMIN source now contains a fail-closed one-time GROUP approval consumer, wired into Tool Runtime. The three AMPHETAMIN MCP host/edge/contract CI workflows passed on the final PR head.
+The proposed resource topology and approval gates are defined in:
+- `config/staging-provisioning-manifest.template.json`
+- `config/staging-provisioning-manifest.schema.json`
 
-For `submit_job`, the verifier maps the invocation to GROUP action `job.submit`, while the operation ID is derived from the validated `job_intent.operation_id` field and bound into the exact Tool request hash. For `cancel_job`, the action and operation ID are both fixed to `job.cancel`. The verifier forwards only `compute:approvals:consume` through the private GROUP Service Binding.
+The template proposes these logical names (not yet provisioned or confirmed unique):
+- AMPHETAMIN Worker: `symbiotyc-amphetamin-mcp-staging`
+- GROUP Worker: `symbiotyc-group-control-plane-staging`
+- Shared D1: `symbiotyc-group-compute-state-staging`
 
-The verifier remains disabled unless `GROUP_APPROVALS_LIVE=true`. The live GROUP Worker still runs its pre-approval version, so approval creation and consumption routes are not active in production. No submit/cancel tools are advertised, and no dispatch or production Worker update was performed.
+The manifest requires AMPHETAMIN's `GROUP` Service Binding to target the staging GROUP Worker and both `RUNTIME_DB` and `DB` bindings to reference the same dedicated staging D1. GROUP remains Service-Binding-only, with workers.dev, Preview URLs, routes, and custom domains disabled. AMPHETAMIN is expected to be reached only through a hostname protected by a separately verified Cloudflare Access application and explicit allow policy.
+
+Unknown resource IDs, hostname, Access application/policy IDs, tenant/project values, and identity mapping remain null or undecided. The identity model must be explicitly decided before provisioning. Secret references are intentionally empty: the inspected Worker entrypoints declare no secret bindings, and the full runtime dependency graph still requires an audit. Never place credential values in this manifest.
+
+All authorization and deployment gates default to false. This is a planning artifact only; it does not provision resources, configure Access, apply migrations, or deploy.
 
 
-## Cloudflare Access OAuth client callbacks — 2026-11-28
+The manifest also pins the reviewed GROUP migration Git blob IDs:
+- `0001_compute_core.sql` — `27ce7d91d81ffd26cf16012b7536d64b1bad6006`
+- `0002_runtime_ledger.sql` — `805f712000e2583fe789ab0268b88ae0e606a077`
+- `0003_compute_approvals.sql` — `913166ab0cc4ef1c200ff9bd50ee4965f51739ea`
+- `0004_amphetamin_activation_state.sql` — `a6274650e9e8bd7b2472e52739beb9a85b59f6c5`
 
-The production Access application has Managed OAuth and Dynamic Client Registration enabled. Its DCR redirect allowlist was incomplete: localhost and loopback clients were allowed, but ChatGPT's HTTPS callback URIs were not listed. The live Access application was updated and read back with these exact allowlist entries:
+Before provisioning or migration, re-read the source files at the pinned GROUP commit and recompute their Git blob IDs. Do not apply migrations merely because the manifest contains expected hashes.
 
-- `https://chatgpt.com/connector_platform_oauth_redirect` — stable ChatGPT callback.
-- `https://chatgpt.com/connector/oauth/*` — callback-ID-specific ChatGPT callback path.
 
-The existing owner-only Access allow policy, 12-hour Access session, Worker deployment, GROUP Service Binding, and D1 binding were preserved. This fixes the callback allowlist gap; it does not by itself prove DCR registration, browser authorization, MCP initialize/tools/list, or a real tool invocation. Those authenticated end-to-end checks remain outstanding.
+### Read-only staging manifest validation
+
+After staging Wrangler files have been created through an explicitly approved process, run:
+
+```sh
+npm run validate:staging-manifest
+```
+
+The validator compares the staging AMPHETAMIN and GROUP Worker names, the AMPHETAMIN GROUP Service Binding target, and both D1 bindings against `config/staging-provisioning-manifest.template.json`. It also recomputes Git blob object IDs for each pinned GROUP migration under `../GROUP/migrations` and fails closed on missing files, unsafe paths, or hash mismatches.
+
+This command is read-only. It never applies migrations, creates resources, changes Access, or deploys. It always reports Access policy verification and provisioning/deployment authorization as false; those gates require separate external evidence and explicit approval. The default command will fail while staging Wrangler files or the GROUP checkout are unavailable, which is intentional.

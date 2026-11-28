@@ -3,6 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test tests/*.test.mjs"
+    "test": "node --test tests/*.test.mjs",
+    "preflight:staging": "node scripts/staging-preflight.mjs",
+    "validate:staging-manifest": "node scripts/staging-manifest-validator.mjs"
   }
 }
