@@ -154,6 +154,11 @@ export function validateManifestAgainstConfigs(manifest, stagingAmphetamin, stag
 
   add(stagingAmphetamin?.workers_dev === false, "AMPHETAMIN workers.dev ingress must be disabled");
   add(stagingAmphetamin?.preview_urls === false, "AMPHETAMIN Preview URLs must be disabled");
+
+  add(stagingAmphetamin?.routes === undefined || (Array.isArray(stagingAmphetamin.routes) && stagingAmphetamin.routes.length === 0),
+    "AMPHETAMIN routes must be absent until the Access hostname and policy are approved");
+  add(stagingAmphetamin?.custom_domain !== true, "AMPHETAMIN custom-domain ingress must remain disabled until Access verification");
+
   add(stagingGroup?.workers_dev === false, "GROUP workers.dev ingress must be disabled");
   add(stagingGroup?.preview_urls === false, "GROUP Preview URLs must be disabled");
   add(stagingGroup?.routes === undefined || (Array.isArray(stagingGroup.routes) && stagingGroup.routes.length === 0),
