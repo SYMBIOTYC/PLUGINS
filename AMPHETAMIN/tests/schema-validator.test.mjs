@@ -21,7 +21,7 @@ test("validates UUID format and string patterns", () => {
 
 test("validates nested additionalProperties schemas", () => {
   const schema = { type: "object", properties: { approvals: { type: "object", maxProperties: 2, additionalProperties: { type: "string", minLength: 1, maxLength: 8 } } }, additionalProperties: false };
-  assert.doesNotThrow(() => validateSchema(schema, { approvals: { read: "approval1" } }));
+  assert.doesNotThrow(() => validateSchema(schema, { approvals: { read: "approve1" } }));
   assert.throws(() => validateSchema(schema, { approvals: { read: "" } }), SchemaValidationError);
 });
 
