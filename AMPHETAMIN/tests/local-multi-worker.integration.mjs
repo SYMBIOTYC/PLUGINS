@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 
 const baseUrl = process.env.AMPHETAMIN_LOCAL_URL || "http://127.0.0.1:8787";
 const deadline = Date.now() + 30_000;
+const sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
 async function waitForWorker() {
   let lastError;
@@ -18,43 +19,13 @@ async function waitForWorker() {
   throw new Error("local AMPHETAMIN Worker did not become ready", { cause: lastError });
 }
 
-const telemetry = {
-  backlog: 3,
-  ambiguous_tasks: 0,
-  resource_pressure: 0,
-  overload_score: 0,
-  quality_score: 100,
-  cooldown_latched: 0,
-  recovery_score: 0,
-  integrity_risk: 0,
-  available_credits: 10,
-  max_credits: 10,
-  max_workers: 4
-};
+async function callTool(name, args, id) {
+  await waitForGroupBinding();
 
-await waitForWorker();
+const result = await callTool("compute_activation_evaluate", telemetry, "local-wasm-e2e");
+assert.equal(result?.isError, false, JSON.stringify(result));
 
-const response = await fetch(`${baseUrl}/mcp`, {
-  method: "POST",
-  headers: { "content-type": "application/json" },
-  body: JSON.stringify({
-    jsonrpc: "2.0",
-    id: "local-wasm-e2e",
-    method: "tools/call",
-    params: {
-      name: "compute_activation_evaluate",
-      arguments: telemetry
-    }
-  })
-});
-
-assert.equal(response.status, 200, "MCP edge should return an HTTP success response");
-const rpc = await response.json();
-assert.equal(rpc.jsonrpc, "2.0");
-assert.equal(rpc.id, "local-wasm-e2e");
-assert.equal(rpc.result?.isError, false, JSON.stringify(rpc.result));
-
-const evaluation = JSON.parse(rpc.result.content[0].text);
+const evaluation = JSON.parse(result.content[0].text);
 assert.equal(evaluation.status_code, 200, JSON.stringify(evaluation));
 assert.ok(evaluation.body?.decision && typeof evaluation.body.decision === "object",
   "GROUP must return a decision from its compiled WASM evaluator");
