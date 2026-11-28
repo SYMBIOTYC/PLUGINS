@@ -82,3 +82,18 @@ npm run validate:staging-manifest
 The validator compares the staging AMPHETAMIN and GROUP Worker names, the AMPHETAMIN GROUP Service Binding target, and both D1 bindings against `config/staging-provisioning-manifest.template.json`. It also recomputes Git blob object IDs for each pinned GROUP migration under `../GROUP/migrations` and fails closed on missing files, unsafe paths, or hash mismatches.
 
 This command is read-only. It never applies migrations, creates resources, changes Access, or deploys. It always reports Access policy verification and provisioning/deployment authorization as false; those gates require separate external evidence and explicit approval. The default command will fail while staging Wrangler files or the GROUP checkout are unavailable, which is intentional.
+
+
+## Cloudflare Access issuer-scoped identity
+
+The MCP entry point requires all of the following before accepting a request:
+
+- `ctx.access` from a direct Cloudflare Access-authenticated Worker invocation, with a non-empty `ctx.access.aud`.
+- `CLOUDFLARE_ACCESS_ISSUER` set to the exact HTTPS Cloudflare Access team issuer origin (for example, `https://<team>.cloudflareaccess.com`). Paths, query strings, fragments, non-HTTPS URLs, and trailing-slash variants are rejected.
+- A `Cf-Access-Jwt-Assertion` application token whose `iss` matches the configured issuer, `aud` contains the Access audience, `sub` is non-empty, `exp` is valid, and `type` is `app`.
+
+Cloudflare validates the Access token before it creates `ctx.access`. The Worker treats that runtime context as the authentication attestation and validates the assertion's issuer/audience/subject claims against it; it does not implement a second JWT signature verifier. Cloudflare documents that `ctx.access` is absent when Access did not authenticate the direct Worker invocation and that the complete JWT assertion remains available in the request header. Do not rely on `ctx.access` being propagated through a Service Binding.
+
+The canonical actor key is `SHA-256(issuer + NUL + subject)`. Email and the mutable identity object fields are not used as an actor-ID fallback or key. Email-only identity, missing issuer configuration, malformed/expired assertions, wrong issuer/audience, empty subject, or a non-application token fail closed with HTTP 401.
+
+Tenant and project remain server-side deployment mappings (`COMPUTE_TENANT_ID` and `COMPUTE_PROJECT_ID`); tenant/project/actor/scopes supplied by identity claims or tool arguments are not authoritative. The owner tenancy decision (Option A vs Option B) remains pending. No production Access policy, environment variable, Worker, D1 database, or deployment was changed by this implementation. The local integration assertion is test-only and is not a production credential.
