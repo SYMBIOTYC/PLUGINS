@@ -118,7 +118,7 @@ async function derivePrincipal(identity, env) {
     error.code = "PROJECT_MAPPING_UNAVAILABLE";
     throw error;
   }
-  const stableSubject = `${identity.aud}\u0000${identity.id}`;
+  const stableSubject = `${identity.issuer}\\u0000${identity.subject}`;
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(stableSubject));
   const actorHash = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
   return {
