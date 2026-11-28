@@ -9,7 +9,7 @@ function encodeJson(value) {
   for (const byte of new TextEncoder().encode(JSON.stringify(value))) {
     binary += String.fromCharCode(byte);
   }
-  return btoa(binary).replace(/\\+/g, "-").replace(/\\//g, "_").replace(/=+$/g, "");
+  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
 }
 
 export function attachTestAccessAssertion(request, {
