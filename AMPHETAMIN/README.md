@@ -26,6 +26,7 @@ This is a parity adapter implemented in TypeScript for the Cloudflare Worker. Th
 - `group.health` — enabled through Skill Runtime and Tool Runtime.
 - `compute_capabilities` — enabled, read-only.
 - `compute_get_job` — enabled, read-only.
+- `compute_activation_evaluate` — source integration added on branch `feat/amphetamin-activation-policy-mcp`; calls GROUP `POST /v1/activation/evaluate` through the existing private Service Binding with a service principal restricted to `compute:activation:evaluate`. It returns a policy decision only and does not dispatch jobs or provision Workers. This tool is not deployed until the source PR is merged and a reviewed deployment is explicitly approved.
 - `compute_submit_job` and `compute_cancel_job` — withheld. Approval creation and write Tool/Skill definitions are not yet implemented; the live GROUP approval routes are unavailable.
 
 This staged reduction is intentional: no operation may bypass the runtime boundary merely to preserve a previous MCP tool listing.
