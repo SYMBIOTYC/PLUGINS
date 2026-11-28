@@ -21,14 +21,15 @@ const decodePrincipal = request => {
   return JSON.parse(Buffer.from(value, "base64url").toString("utf8"));
 };
 
-test("MCP lists only health and the two read-only compute tools", async () => {
+test("MCP lists only verified health and read-only compute tools", async () => {
   const response = await handleRequest(rpc("tools/list"), envFor(async () => Response.json({})), identity);
   const payload = await response.json();
   assert.deepEqual(payload.result.tools.map(tool => tool.name), [
     "group.health",
     "compute_capabilities",
     "compute_get_job",
-    "compute_activation_state"
+    "compute_activation_state",
+    "compute_activation_evaluate"
   ]);
   const getJob = payload.result.tools.find(tool => tool.name === "compute_get_job");
   assert.deepEqual(getJob.inputSchema.required, ["job_id"]);
