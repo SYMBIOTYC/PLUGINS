@@ -22,15 +22,16 @@ export async function verifyMigrationInventory(manifest, groupRoot) {
   if (!Array.isArray(entries) || entries.length === 0) {
     return { ok: false, errors: ["Manifest migration inventory is missing"] };
   }
-  if (!Array.isArray(expected) || expected.length === 0 ||
-      expected.some((name) => typeof name !== "string" || name.length === 0)) {
-    return { ok: false, errors: ["Manifest expected migration list is missing or invalid"] };
+  const expectedValid = Array.isArray(expected) && expected.length > 0 &&
+    expected.every((name) => typeof name === "string" && name.length > 0);
+  if (!expectedValid) {
+    errors.push("Manifest expected migration list is missing or invalid");
   }
 
-  const expectedSet = new Set(expected);
+  const expectedSet = new Set(expectedValid ? expected : []);
   const seenNames = new Set();
   const seenPaths = new Set();
-  if (expectedSet.size !== expected.length) {
+  if (expectedValid && expectedSet.size !== expected.length) {
     errors.push("Manifest expected migration list contains duplicates");
   }
   for (const entry of entries) {
@@ -61,7 +62,7 @@ export async function verifyMigrationInventory(manifest, groupRoot) {
   for (const name of seenNames) {
     if (!expectedSet.has(name)) errors.push(`unexpected migration inventory entry: ${name}`);
   }
-  if (entries.length !== expected.length) {
+  if (expectedValid && entries.length !== expected.length) {
     errors.push("Migration blob inventory count does not match expected migrations");
   }
 
