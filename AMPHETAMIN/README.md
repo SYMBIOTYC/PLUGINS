@@ -60,3 +60,12 @@ The manifest requires AMPHETAMIN's `GROUP` Service Binding to target the staging
 Unknown resource IDs, hostname, Access application/policy IDs, tenant/project values, and identity mapping remain null or undecided. The identity model must be explicitly decided before provisioning. Secret references are intentionally empty: the inspected Worker entrypoints declare no secret bindings, and the full runtime dependency graph still requires an audit. Never place credential values in this manifest.
 
 All authorization and deployment gates default to false. This is a planning artifact only; it does not provision resources, configure Access, apply migrations, or deploy.
+
+
+The manifest also pins the reviewed GROUP migration Git blob IDs:
+- `0001_compute_core.sql` — `27ce7d91d81ffd26cf16012b7536d64b1bad6006`
+- `0002_runtime_ledger.sql` — `805f712000e2583fe789ab0268b88ae0e606a077`
+- `0003_compute_approvals.sql` — `913166ab0cc4ef1c200ff9bd50ee4965f51739ea`
+- `0004_amphetamin_activation_state.sql` — `a6274650e9e8bd7b2472e52739beb9a85b59f6c5`
+
+Before provisioning or migration, re-read the source files at the pinned GROUP commit and recompute their Git blob IDs. Do not apply migrations merely because the manifest contains expected hashes.
