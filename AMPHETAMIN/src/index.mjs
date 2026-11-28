@@ -3,6 +3,7 @@ import { ToolRuntime } from "../runtime/tool-runtime.mjs";
 import { SkillRuntime } from "../runtime/skill-runtime.mjs";
 import { TOOL_REGISTRY, SKILL_REGISTRY, SKILL_DEFINITIONS } from "../runtime/registry.mjs";
 import { createGroupApprovalVerifier } from "./approval-verifier.mjs";
+import { createRemoteJWKSet, jwtVerify } from "jose";
 
 export const MAX_REQUEST_BYTES = 64 * 1024;
 const MAX_GROUP_RESPONSE_BYTES = 8 * 1024;
@@ -32,24 +33,73 @@ function hasRequestId(message) {
   return Object.prototype.hasOwnProperty.call(message, "id");
 }
 
-async function getAccessIdentity(ctx) {
+const ACCESS_JWKS_BY_ISSUER = new Map();
+
+function getAccessJwks(issuer) {
+  let jwks = ACCESS_JWKS_BY_ISSUER.get(issuer);
+  if (!jwks) {
+    jwks = createRemoteJWKSet(new URL(`${issuer}/cdn-cgi/access/certs`));
+    ACCESS_JWKS_BY_ISSUER.set(issuer, jwks);
+  }
+  return jwks;
+}
+
+function trustedAccessIssuer(value) {
+  if (typeof value !== "string" || !value || value !== value.trim()) return null;
+  try {
+    const url = new URL(value);
+    if (
+      url.protocol !== "https:" ||
+      url.origin !== value ||
+      url.pathname !== "/" ||
+      url.search ||
+      url.hash
+    ) return null;
+    return value;
+  } catch {
+    return null;
+  }
+}
+
+async function getAccessIdentity(request, ctx, env) {
+  const audience = ctx?.access?.aud;
+  const issuer = trustedAccessIssuer(env?.CLOUDFLARE_ACCESS_ISSUER);
   if (
     !ctx?.access ||
-    typeof ctx.access.aud !== "string" ||
-    !ctx.access.aud.trim() ||
+    typeof audience !== "string" ||
+    !audience.trim() ||
+    !issuer ||
     typeof ctx.access.getIdentity !== "function"
   ) return null;
+
   try {
-    const identity = await ctx.access.getIdentity();
-    return (
-      identity &&
-      typeof identity.id === "string" &&
-      identity.id.trim().length > 0 &&
-      typeof identity.email === "string" &&
-      identity.email.trim().length > 0
-    )
-      ? { ...identity, id: identity.id.trim(), aud: ctx.access.aud.trim() }
-      : null;
+    const accessIdentity = await ctx.access.getIdentity();
+    if (!accessIdentity || typeof accessIdentity !== "object" || Array.isArray(accessIdentity)) {
+      return null;
+    }
+
+    const assertion = request.headers.get("cf-access-jwt-assertion");
+    if (!assertion) return null;
+
+    const { payload } = await jwtVerify(assertion, getAccessJwks(issuer), {
+      issuer,
+      audience: audience.trim(),
+      algorithms: ["RS256"],
+      requiredClaims: ["exp", "iss", "aud", "sub"],
+      clockTolerance: 5
+    });
+
+    if (
+      typeof payload.sub !== "string" ||
+      !payload.sub.trim() ||
+      payload.type !== "app"
+    ) return null;
+
+    return {
+      issuer: payload.iss,
+      subject: payload.sub.trim(),
+      aud: audience.trim()
+    };
   } catch {
     return null;
   }
@@ -394,7 +444,7 @@ export async function handleRequest(request, env, ctx) {
   if (url.pathname !== "/mcp" && url.pathname !== "/health") {
     return json({ ok: false, error: "not_found" }, 404);
   }
-  const identity = await getAccessIdentity(ctx);
+  const identity = await getAccessIdentity(request, ctx, env);
   if (!identity) {
     return json({ ok: false, error: "access_authentication_required" }, 401, {
       "www-authenticate": "Bearer"
