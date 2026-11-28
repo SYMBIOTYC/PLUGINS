@@ -83,7 +83,8 @@ const manifest = {
     },
     d1: { name: "db-staging", database_id: null }
   },
-  identity: { model: "UNDECIDED" }
+  identity: { model: "UNDECIDED" },
+  secret_references: []
 };
 const amp = {
   name: "amp-staging",
