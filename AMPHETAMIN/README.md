@@ -25,3 +25,18 @@ The local multi-Worker integration gate passed in [GitHub Actions run #461339401
 The run compiled the pinned GROUP C policy to WASM, passed the AMPHETAMIN unit/contract suite, applied both synthetic local D1 migration sets, and executed the real MCP `tools/call` request. Wrangler's logs show the GROUP Service Binding transitioning to `[connected]`; the caller then returned HTTP 200 for `POST /mcp`. The integration assertion verified a non-error MCP result, GROUP decision fields emitted by the WASM evaluator, and the initial activation-state snapshot read from local D1. The job concluded successfully.
 
 This closes the local integration gate only. It does not prove live Cloudflare service-to-service connectivity, persistent staging behavior, production Access policy, production D1 correctness, or deployment readiness. The next gate is a separately isolated staging verification plan and security review; no staging resources or deployment are created by this result.
+
+
+## Staging configuration preflight
+
+The repository includes a fail-closed, read-only staging configuration validator:
+
+```sh
+node scripts/staging-preflight.mjs --staging wrangler.staging.toml --production wrangler.toml
+```
+
+The validator compares the staging config with the production config and rejects reuse of the Worker name, GROUP Service Binding target, D1 database ID/name, or tenant/project identifiers. It also requires `workers_dev = false` and `preview_urls = false` for staging. The command does not create resources, apply migrations, change bindings, or deploy.
+
+The current production config is used only as a comparison baseline. Do not create a staging config by copying production IDs. A future staging config must reference separately provisioned staging resources.
+
+**Important boundary:** a passing local configuration check does not verify Cloudflare Access. The report always sets `access_policy_verified: false` and identifies external Access application, hostname, and policy verification as a separate gate. Do not deploy staging until that external gate is independently confirmed and approved.
