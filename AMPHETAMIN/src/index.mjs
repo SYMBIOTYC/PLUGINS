@@ -530,6 +530,9 @@ export async function handleRequest(request, env, ctx) {
     if (typeof params.name !== "string" || !isObject(params.arguments)) {
       return rpcError(id, -32602, "Invalid tool parameters");
     }
+    if (!toolList().some((tool) => tool.name === params.name)) {
+      return rpcError(id, -32602, "Unknown tool");
+    }
     const principal = await derivePrincipal(identity, env);
     const result = await invokeTool(params.name, params.arguments, env, principal);
     return json({ jsonrpc: "2.0", id, result });
