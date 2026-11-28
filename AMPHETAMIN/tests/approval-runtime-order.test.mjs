@@ -8,7 +8,7 @@ const request = (overrides = {}) => ({
   tool_id: "symbiotyc.group",
   invocation_id: "submit_job",
   idempotency_key: "test-submit-idempotency-01",
-  input: { operation_id: "image.render", payload: { prompt: "test" } },
+  input: { job_intent: { operation_id: "image.render", payload: { prompt: "test" } } },
   ...overrides
 });
 
@@ -20,14 +20,21 @@ const registry = {
         submit_job: {
           status: "verified",
           side_effect: "write",
-          operation_id: "job.submit",
+          operation_id_from_input: "job_intent.operation_id",
           required_scopes: ["compute:jobs:write"],
           input_schema: {
             type: "object",
-            required: ["operation_id", "payload"],
+            required: ["job_intent"],
             properties: {
-              operation_id: { type: "string" },
-              payload: { type: "object" }
+              job_intent: {
+                type: "object",
+                required: ["operation_id", "payload"],
+                properties: {
+                  operation_id: { type: "string" },
+                  payload: { type: "object" }
+                },
+                additionalProperties: false
+              }
             },
             additionalProperties: false
           }
@@ -105,6 +112,6 @@ test("resolves idempotency replay before consuming a one-time approval", async (
   assert.equal(replay.replayed, true);
   assert.equal(verifierCalls, 1);
   assert.equal(handlerCalls, 1);
-  assert.equal(observedClaims.operation_id, "job.submit");
+  assert.equal(observedClaims.operation_id, "image.render");
   assert.equal(observedClaims.request_id, approvedRequest.request_id);
 });
