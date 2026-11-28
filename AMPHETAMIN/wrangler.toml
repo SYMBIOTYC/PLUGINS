@@ -4,8 +4,11 @@ compatibility_date = "2026-11-28"
 workers_dev = true
 preview_urls = false
 
-# Public hostname is protected by a Worker-level Cloudflare Access policy.
-# No route, custom domain, API token, or public GROUP endpoint is configured.
+[vars]
+COMPUTE_TENANT_ID = "symbiotyc"
+COMPUTE_PROJECT_ID = "compute"
+
+# The hostname is Access-protected; GROUP is reachable via a private Service Binding only.
 [[services]]
 binding = "GROUP"
 service = "symbiotyc-group-control-plane"
