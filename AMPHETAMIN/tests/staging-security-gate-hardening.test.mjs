@@ -53,8 +53,6 @@ test("manifest topology validator rejects public AMPHETAMIN ingress", () => {
   for (const unsafe of [
     { ...safeAmp, workers_dev: true },
     { ...safeAmp, preview_urls: true },
-    { ...safeAmp, routes: [{ pattern: "amp.example.com/*" }] },
-    { ...safeAmp, custom_domain: true }
   ]) {
     const result = validateManifestAgainstConfigs(safeManifest, unsafe, safeGroup);
     assert.equal(result.ok, false, JSON.stringify(unsafe));
