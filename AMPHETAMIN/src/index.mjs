@@ -3,6 +3,7 @@ import { ToolRuntime } from "../runtime/tool-runtime.mjs";
 import { SkillRuntime } from "../runtime/skill-runtime.mjs";
 import { TOOL_REGISTRY, SKILL_REGISTRY, SKILL_DEFINITIONS } from "../runtime/registry.mjs";
 import { createGroupApprovalVerifier } from "./approval-verifier.mjs";
+import { createRemoteJWKSet, jwtVerify, customFetch } from "jose";
 
 export const MAX_REQUEST_BYTES = 64 * 1024;
 const MAX_GROUP_RESPONSE_BYTES = 8 * 1024;
@@ -32,14 +33,6 @@ function hasRequestId(message) {
   return Object.prototype.hasOwnProperty.call(message, "id");
 }
 
-function decodeAccessJwtPart(value) {
-  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
-  const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
-  const binary = atob(padded);
-  const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
-  return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
-}
-
 function trustedAccessIssuer(value) {
   if (typeof value !== "string" || !value || value !== value.trim()) return null;
   try {
@@ -57,6 +50,35 @@ function trustedAccessIssuer(value) {
   }
 }
 
+const ACCESS_JWKS_BY_ISSUER = new Map();
+const ACCESS_JWKS_BY_TEST_BINDING = new WeakMap();
+
+function getAccessJwks(issuer, env) {
+  const jwksUrl = new URL(`${issuer}/cdn-cgi/access/certs`);
+  const testBinding = env?.ACCESS_JWKS_TEST;
+  if (testBinding && typeof testBinding.fetch === "function") {
+    let byIssuer = ACCESS_JWKS_BY_TEST_BINDING.get(testBinding);
+    if (!byIssuer) {
+      byIssuer = new Map();
+      ACCESS_JWKS_BY_TEST_BINDING.set(testBinding, byIssuer);
+    }
+    let jwks = byIssuer.get(issuer);
+    if (!jwks) {
+      const testFetch = (input, init) => testBinding.fetch(new Request(input, init));
+      jwks = createRemoteJWKSet(jwksUrl, { [customFetch]: testFetch });
+      byIssuer.set(issuer, jwks);
+    }
+    return jwks;
+  }
+
+  let jwks = ACCESS_JWKS_BY_ISSUER.get(issuer);
+  if (!jwks) {
+    jwks = createRemoteJWKSet(jwksUrl);
+    ACCESS_JWKS_BY_ISSUER.set(issuer, jwks);
+  }
+  return jwks;
+}
+
 async function getAccessIdentity(request, ctx, env) {
   const audience = ctx?.access?.aud;
   const issuer = trustedAccessIssuer(env?.CLOUDFLARE_ACCESS_ISSUER);
@@ -68,35 +90,29 @@ async function getAccessIdentity(request, ctx, env) {
   ) return null;
 
   try {
-    // ctx.access is Cloudflare's authenticated-request attestation. Cloudflare
-    // validates the Access token before creating this context; the assertion
-    // supplies the issuer/subject claims not exposed by ctx.access.aud. WARP
-    // requests may expose only aud on ctx.access, so getIdentity() is optional.
+    // ctx.access confirms that Access authenticated this direct Worker request.
+    // WARP contexts may expose only aud, so verify the complete assertion against
+    // the configured team's rotating JWKS before trusting iss/sub as identity.
     const assertion = request.headers.get("cf-access-jwt-assertion");
     if (!assertion) return null;
-    const parts = assertion.split(".");
-    if (parts.length !== 3 || parts.some((part) => !part)) return null;
 
-    const header = decodeAccessJwtPart(parts[0]);
-    const claims = decodeAccessJwtPart(parts[1]);
-    if (header?.alg !== "RS256" || (header?.typ && header.typ !== "JWT")) return null;
+    const { payload } = await jwtVerify(assertion, getAccessJwks(issuer, env), {
+      issuer,
+      audience: audience.trim(),
+      algorithms: ["RS256"],
+      requiredClaims: ["exp", "iss", "aud", "sub"],
+      clockTolerance: 5
+    });
 
-    const now = Math.floor(Date.now() / 1000);
-    const tokenAudiences = Array.isArray(claims?.aud) ? claims.aud : [claims?.aud];
     if (
-      claims?.iss !== issuer ||
-      !tokenAudiences.includes(audience.trim()) ||
-      typeof claims?.sub !== "string" ||
-      !claims.sub.trim() ||
-      claims.type !== "app" ||
-      !Number.isInteger(claims.exp) ||
-      claims.exp <= now - 5 ||
-      (claims.nbf !== undefined && (!Number.isInteger(claims.nbf) || claims.nbf > now + 5))
+      typeof payload.sub !== "string" ||
+      !payload.sub.trim() ||
+      payload.type !== "app"
     ) return null;
 
     return {
-      issuer: claims.iss,
-      subject: claims.sub.trim(),
+      issuer: payload.iss,
+      subject: payload.sub.trim(),
       aud: audience.trim()
     };
   } catch {
