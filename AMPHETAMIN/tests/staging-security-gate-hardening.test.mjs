@@ -71,6 +71,36 @@ test("manifest topology validator rejects public GROUP ingress", () => {
   }
 });
 
+
+test("manifest ingress declarations enforce no public GROUP path and no unapproved AMPHETAMIN route", () => {
+  const invalidManifests = [
+    { ...safeManifest, resources: { ...safeManifest.resources, workers: {
+      ...safeManifest.resources.workers,
+      amphetamin: { ...safeManifest.resources.workers.amphetamin, ingress: { workers_dev: false, preview_urls: false, public_routes: ["example.com/*"], custom_domains: [] } }
+    } } },
+    { ...safeManifest, resources: { ...safeManifest.resources, workers: {
+      ...safeManifest.resources.workers,
+      amphetamin: { ...safeManifest.resources.workers.amphetamin, ingress: { workers_dev: false, preview_urls: false, public_routes: [], custom_domains: ["amp.example.com"] } }
+    } } },
+    { ...safeManifest, resources: { ...safeManifest.resources, workers: {
+      ...safeManifest.resources.workers,
+      group: { ...safeManifest.resources.workers.group, ingress: { workers_dev: false, preview_urls: false, routes: ["group.example.com/*"], custom_domains: [], service_binding_only: true } }
+    } } },
+    { ...safeManifest, resources: { ...safeManifest.resources, workers: {
+      ...safeManifest.resources.workers,
+      group: { ...safeManifest.resources.workers.group, ingress: { workers_dev: false, preview_urls: false, routes: [], custom_domains: ["group.example.com"], service_binding_only: true } }
+    } } },
+    { ...safeManifest, resources: { ...safeManifest.resources, workers: {
+      ...safeManifest.resources.workers,
+      group: { ...safeManifest.resources.workers.group, ingress: { workers_dev: false, preview_urls: false, routes: [], custom_domains: [], service_binding_only: false } }
+    } } }
+  ];
+  for (const manifest of invalidManifests) {
+    const result = validateManifestAgainstConfigs(manifest, safeAmp, safeGroup);
+    assert.equal(result.ok, false);
+  }
+});
+
 test("migration inventory must match every expected migration exactly once", async () => {
   const root = await mkdtemp(join(tmpdir(), "group-migrations-"));
   try {
