@@ -213,3 +213,18 @@ GitHub Actions on the latest PR head:
 - Plugin contract CI run [46125624729](https://github.com/SYMBIOTYC/PLUGINS/actions/runs/46125624729): success.
 
 The preflight is read-only and does not register a client, exchange tokens, or invoke tools. Production Worker version and D1 data remain unchanged. The live authenticated MCP round-trip remains unverified.
+
+
+## PR #24 merged — production deployment remains separate
+
+PR [#24](https://github.com/SYMBIOTYC/PLUGINS/pull/24) was squash-merged to `main` at `68df7246b3e1a1818990fe8142dfe593a6a34b45`. Read-back from `main` confirms the Origin guard and OAuth preflight script are present. All five CI workflows on the final PR head passed, including the live OAuth discovery probe.
+
+A fresh post-merge Cloudflare read-back confirms the production Worker is still on deployment `781111b3-33f4-4817-bf41-b1b8539a037c`, version `bd9f2f99-4b56-41b7-9e57-73efd98f4800`, at 100% traffic. The source changes from PR #24 are merged but NOT deployed. The production Worker has not yet received the `MCP_ALLOWED_ORIGINS` variable or the new Origin guard.
+
+Post-grant-change production checks:
+- Access OAuth grant persists at `access_token_lifetime=15m`, `session_duration=168h`.
+- OAuth and DCR remain enabled; callback allowlist and owner-only policy ID remain unchanged; outer Access session remains `12h`.
+- Last-24-hour Worker telemetry query returned 0 AMPHETAMIN events.
+- D1 row counts remain `runtime_audit_events=0`, `runtime_idempotency=0`.
+
+Next production step is a separately reviewed Worker deployment of the merged source and allowlist variable, followed by a local RFC 8707 + PKCE S256 authorization-code test (or eligible ChatGPT Web connection) and authenticated MCP round-trip. Do not mark the server connected yet.
