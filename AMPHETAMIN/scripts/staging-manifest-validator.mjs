@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import { pathToFileURL } from "node:url";
 import { isAbsolute, relative, resolve, sep } from "node:path";
+import { parseWranglerJsonc, parseWranglerToml } from "./staging-preflight.mjs";
 
 export function computeGitBlobSha(content) {
   const bytes = Buffer.isBuffer(content) ? content : Buffer.from(content, "utf8");
@@ -99,4 +101,45 @@ export function validateManifestAgainstConfigs(manifest, stagingAmphetamin, stag
     ampDb[0].database_name === groupDb[0].database_name,
   "AMPHETAMIN and GROUP staging D1 bindings do not match");
   return { ok: errors.length === 0, errors };
+}
+
+
+export async function runStagingManifestValidation({
+  manifestPath = "config/staging-provisioning-manifest.template.json",
+  ampConfigPath = "wrangler.staging.toml",
+  groupConfigPath = "../GROUP/wrangler.staging.jsonc",
+  groupRoot = "../GROUP"
+} = {}) {
+  const [manifestSource, ampSource, groupSource] = await Promise.all([
+    readFile(manifestPath, "utf8"),
+    readFile(ampConfigPath, "utf8"),
+    readFile(groupConfigPath, "utf8")
+  ]);
+  const manifest = JSON.parse(manifestSource);
+  const ampConfig = parseWranglerToml(ampSource);
+  const groupConfig = parseWranglerJsonc(groupSource);
+  const topology = validateManifestAgainstConfigs(manifest, ampConfig, groupConfig);
+  const migrations = await verifyMigrationInventory(manifest, groupRoot);
+  const errors = [...topology.errors, ...migrations.errors];
+  return {
+    ok: errors.length === 0,
+    errors,
+    topology_verified: topology.ok,
+    migration_blobs_verified: migrations.ok,
+    access_policy_verified: false,
+    provisioning_authorized: false,
+    deployment_authorized: false
+  };
+}
+
+const invokedPath = process.argv[1] ? resolve(process.argv[1]) : "";
+if (invokedPath && pathToFileURL(invokedPath).href === import.meta.url) {
+  try {
+    const report = await runStagingManifestValidation();
+    console.log(JSON.stringify(report, null, 2));
+    if (!report.ok) process.exitCode = 1;
+  } catch (error) {
+    console.error(`Staging manifest validation blocked: ${error.message}`);
+    process.exitCode = 1;
+  }
 }
