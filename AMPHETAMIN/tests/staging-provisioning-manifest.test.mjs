@@ -35,6 +35,15 @@ test("manifest requires one dedicated D1 shared by both Workers and GROUP-owned 
   assert.deepEqual(manifest.resources.d1.consumers.sort(), ["AMPHETAMIN.RUNTIME_DB", "GROUP.DB"]);
   assert.equal(manifest.resources.d1.migration_owner, "GROUP");
   assert.equal(manifest.resources.d1.apply_migrations_automatically, false);
+  assert.deepEqual(
+    manifest.resources.d1.expected_migration_blobs.map((item) => item.git_blob_sha),
+    [
+      "27ce7d91d81ffd26cf16012b7536d64b1bad6006",
+      "805f712000e2583fe789ab0268b88ae0e606a077",
+      "913166ab0cc4ef1c200ff9bd50ee4965f51739ea",
+      "a6274650e9e8bd7b2472e52739beb9a85b59f6c5"
+    ]
+  );
 });
 
 test("manifest leaves Access identity and Cloudflare resource facts pending", async () => {
