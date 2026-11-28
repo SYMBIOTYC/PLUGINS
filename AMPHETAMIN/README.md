@@ -19,13 +19,14 @@ The three exposed read-only MCP tools execute through:
 
 The runtime layer includes strict request/schema validation, trusted server-side handlers, tenant-scoped D1 idempotency, append-only metadata-only audit, preflight validation, and unknown-outcome quarantine. A source-level GROUP approval consumer is now integrated into the Tool Runtime; it is gated by `GROUP_APPROVALS_LIVE=true`, requires an operation-bound approval ID, and uses a consume-only principal. The gate remains unset/false in production.
 
-This is a parity adapter implemented in TypeScript for the Cloudflare Worker. The original Python Tool/Skill Runtime remains authoritative in the PLUGINS root and is not imported by this Worker. The deployed adapter exposes the three verified read-only tools; the approval consumer is source-integrated but is not part of the live Worker bundle.
+This is a parity adapter implemented in TypeScript for the Cloudflare Worker. The original Python Tool/Skill Runtime remains authoritative in the PLUGINS root and is not imported by this Worker. The deployed adapter currently exposes the three live verified read-only tools; PR #25 adds a fourth read-only activation-state tool on the feature branch, pending the GROUP API dependency; the approval consumer is source-integrated but is not part of the live Worker bundle.
 
 ## Tool availability
 
 - `group.health` — enabled through Skill Runtime and Tool Runtime.
 - `compute_capabilities` — enabled, read-only.
 - `compute_get_job` — enabled, read-only.
+- `compute_activation_state` — added on PR #25 as a read-only view of GROUP's durable activation/deployment-streak/burnout snapshot. It requires the GROUP PR #12 activation-state API and is not part of the live deployed tool surface until both changes are released.
 - `compute_submit_job` and `compute_cancel_job` — withheld. Approval creation and write Tool/Skill definitions are not yet implemented; the live GROUP approval routes are unavailable.
 
 This staged reduction is intentional: no operation may bypass the runtime boundary merely to preserve a previous MCP tool listing.
