@@ -1,6 +1,10 @@
 name: AMPHETAMIN production release
 
 on:
+  pull_request:
+    paths:
+      - "AMPHETAMIN/**"
+      - ".github/workflows/amphetamin-production-release.yml"
   workflow_dispatch:
     inputs:
       confirm_production_deploy:
@@ -20,10 +24,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  deploy:
-    if: inputs.confirm_production_deploy == 'yes'
+  validate:
     runs-on: ubuntu-latest
-    environment: production
     defaults:
       run:
         working-directory: AMPHETAMIN
@@ -44,6 +46,23 @@ jobs:
 
       - name: Build and validate Worker bundle without deployment
         run: npx --yes wrangler@4.169.0 deploy --dry-run --config wrangler.toml
+
+  deploy:
+    needs: validate
+    if: github.event_name == 'workflow_dispatch' && inputs.confirm_production_deploy == 'yes'
+    runs-on: ubuntu-latest
+    environment: production
+    defaults:
+      run:
+        working-directory: AMPHETAMIN
+    steps:
+      - name: Check out reviewed source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.12.0"
 
       - name: Deploy reviewed Worker to Cloudflare production
         run: npx --yes wrangler@4.169.0 deploy --config wrangler.toml
