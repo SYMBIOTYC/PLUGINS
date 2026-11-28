@@ -73,6 +73,10 @@ Remote MCP clients require a reachable endpoint. The selected account currently 
 - Idempotency replay and payload-conflict tests.
 - Secrets absent from repository files, MCP results, and audit events.
 
+## Current production state
+
+The OAuth KV namespace exists in the EU jurisdiction, but it is not yet bound to a deployed Worker. GROUP D1 currently has no project quota or enabled operation policy rows; therefore no production Job can be accepted. Do not invent tenant/project ownership, quotas, or operation allowlists. The GROUP Worker is active on deployment version 1, but source/deployed-version parity is not verified.
+
 ## Deployment gate
 
 Deploy only after bundle build and tests pass, OAuth KV and Access OIDC configuration are provisioned, and secrets are stored directly in Cloudflare. Enable the public MCP hostname only with OAuth enforcement in place. Do not expose placeholder tools or activate GROUP dispatch until end-to-end tests pass.
