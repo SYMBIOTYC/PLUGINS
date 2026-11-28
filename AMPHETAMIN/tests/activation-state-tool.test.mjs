@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { handleRequest } from "../src/index.mjs";
+import { callWithTestAccess } from "./access-fixture.mjs";
 import { FakeD1 } from "./fake-d1.mjs";
 
 const identity = { access: { aud: "test-access-audience", getIdentity: async () => ({ email: "owner@example.invalid", id: "access-owner-1" }) } };
@@ -20,7 +21,7 @@ const decodePrincipal = request => JSON.parse(
 );
 
 test("MCP exposes activation state as read-only and uses a scoped service principal", async () => {
-  const listed = await (await handleRequest(rpc("tools/list"), envFor(async () => Response.json({})), identity)).json();
+  const listed = await (await callWithTestAccess(handleRequest, rpc("tools/list"), envFor(async () => Response.json({})), identity)).json();
   assert.ok(listed.result.tools.some(tool => tool.name === "compute_activation_state"));
 
   let captured;
@@ -37,7 +38,7 @@ test("MCP exposes activation state as read-only and uses a scoped service princi
       version: 9
     });
   });
-  const payload = await (await handleRequest(rpc("tools/call", {
+  const payload = await (await callWithTestAccess(handleRequest, rpc("tools/call", {
     name: "compute_activation_state", arguments: {}
   }), env, identity)).json();
   const principal = decodePrincipal(captured);
@@ -52,7 +53,7 @@ test("MCP exposes activation state as read-only and uses a scoped service princi
 test("activation state tool fails closed when the trusted GROUP binding is missing", async () => {
   const env = envFor(async () => { throw new Error("must not be called"); });
   delete env.GROUP;
-  const payload = await (await handleRequest(rpc("tools/call", {
+  const payload = await (await callWithTestAccess(handleRequest, rpc("tools/call", {
     name: "compute_activation_state", arguments: {}
   }), env, identity)).json();
   assert.equal(payload.result.isError, true);
