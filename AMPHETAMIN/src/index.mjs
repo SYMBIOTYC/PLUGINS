@@ -1,7 +1,7 @@
-import { D1AuditSink, D1IdempotencyStore } from "./runtime/d1-adapters.mjs";
-import { ToolRuntime } from "./runtime/tool-runtime.mjs";
-import { SkillRuntime } from "./runtime/skill-runtime.mjs";
-import { TOOL_REGISTRY, SKILL_REGISTRY, SKILL_DEFINITIONS } from "./runtime/registry.mjs";
+import { D1AuditSink, D1IdempotencyStore } from "../runtime/d1-adapters.mjs";
+import { ToolRuntime } from "../runtime/tool-runtime.mjs";
+import { SkillRuntime } from "../runtime/skill-runtime.mjs";
+import { TOOL_REGISTRY, SKILL_REGISTRY, SKILL_DEFINITIONS } from "../runtime/registry.mjs";
 
 export const MAX_REQUEST_BYTES = 64 * 1024;
 const MAX_GROUP_RESPONSE_BYTES = 8 * 1024;
