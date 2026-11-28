@@ -160,3 +160,20 @@ No production Worker deployment or Access policy change was made.
 The PR workflow has now executed successfully. GitHub Actions run [46125027544](https://github.com/SYMBIOTYC/PLUGINS/actions/runs/46125027544) completed with conclusion `success`; its `node --test tests/*.test.mjs` step reports **54 tests passed, 0 failed**. The existing AMPHETAMIN MCP host tests, AMPHETAMIN MCP edge tests, and Plugin contract CI also completed successfully on the PR merge commit.
 
 PR #24 is no longer draft and is mergeable. It remains open and unmerged; production deployment remains a separate gated operation.
+
+
+## OAuth interoperability preflight — 2026-11-28
+
+A fresh Access API read-back confirms Managed OAuth and DCR enabled on the `self_hosted` application, with the stable ChatGPT callback and callback-ID-specific callback pattern in the allowlist. The owner-only policy is unchanged. The API response omits `oauth_configuration.grant`; the Access app's separate `session_duration=12h` is not an OAuth refresh-token grant lifetime.
+
+Cloudflare Workers Access documentation confirms that a direct Access-authenticated Worker invocation receives `ctx.access`; `ctx.access.getIdentity()` is the supported identity API and does not require application code to parse the Access JWT. The MCP handler's fallback for missing identity returns 401 with `WWW-Authenticate: Bearer`; the Access edge should challenge unauthenticated requests before Worker execution when the Access application is active.
+
+OpenAI's current plugin authentication contract requires Protected Resource Metadata, Authorization Server Metadata with PKCE S256 support, DCR registration metadata when DCR is used, RFC 8707 `resource` propagation, and exact callback URI allowlisting. The configured callbacks match the documented stable and callback-ID-specific ChatGPT patterns. Cloudflare Managed OAuth documentation claims RFC 8707 support and discovery metadata, but the actual public discovery JSON, challenge value, PKCE advertisement, DCR endpoint, token endpoint auth methods, refresh-token behavior, and resource echo have not been retrieved. The web reader cannot access the protected well-known endpoints; no connected browser context is available. These remain hard blockers for asserting OAuth interoperability.
+
+Fresh read-only production checks:
+- Active Worker deployment/version unchanged; 100% traffic on `bd9f2f99-4b56-41b7-9e57-73efd98f4800`.
+- Workers Observability query for the last 24 hours returned zero events for the AMPHETAMIN service.
+- D1 row counts remain zero in `runtime_audit_events` and `runtime_idempotency`.
+- No authenticated MCP request or OAuth exchange has been observed.
+
+Next gate: capture the Access 401 challenge and both discovery documents with an RFC 8707 + PKCE S256 client, validate issuer/resource/S256/DCR/token-auth metadata, complete authorization, then run `initialize → tools/list → group.health` and correlate Worker telemetry plus D1 rows. No production changes were made.
