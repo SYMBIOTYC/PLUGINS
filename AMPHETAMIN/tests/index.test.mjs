@@ -24,7 +24,7 @@ test("initializes a stateless MCP session", async () => {
 });
 test("advertises only verified read-only tools", async () => {
   const payload = await (await handleRequest(rpc("tools/list"), baseEnv(), access)).json();
-  assert.deepEqual(payload.result.tools.map(tool => tool.name), ["group.health", "compute_capabilities", "compute_get_job"]);
+  assert.deepEqual(payload.result.tools.map(tool => tool.name), ["group.health", "compute_capabilities", "compute_get_job", "compute_activation_state"]);
   assert.equal(payload.result.tools.every(tool => tool.inputSchema.additionalProperties === false), true);
 });
 test("executes group.health through Skill Runtime, Tool Runtime, and private GROUP binding", async () => {
