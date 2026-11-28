@@ -116,25 +116,6 @@ export class ToolRuntime {
       throw new ToolInvocationError("INVALID_INPUT", "invocation input is not canonical JSON", 422);
     }
 
-    if (STATE_CHANGING.has(sideEffect)) {
-      const approvalId = request.approval_id;
-      const claims = {
-        tenant_id: principal.tenant_id,
-        actor_id: principal.actor_id,
-        tool_id: request.tool_id,
-        invocation_id: request.invocation_id,
-        request_hash: requestHash,
-        side_effect: sideEffect
-      };
-      if (!approvalId || typeof this.approvalVerifier !== "function") {
-        throw new ToolInvocationError("APPROVAL_REQUIRED", "a valid approval bound to this exact operation is required", 403);
-      }
-      let approved = false;
-      try { approved = await this.approvalVerifier(approvalId, claims); }
-      catch { throw new ToolInvocationError("APPROVAL_VERIFICATION_FAILED", "approval service is unavailable", 503); }
-      if (!approved) throw new ToolInvocationError("APPROVAL_REQUIRED", "approval does not match this exact operation", 403);
-    }
-
     const ledgerKey = { tenant_id: principal.tenant_id, idempotency_key: request.idempotency_key };
     const event = (status) => ({
       event_type: "tool.invocation",
@@ -159,6 +140,33 @@ export class ToolRuntime {
     if (claim.state === "replay") {
       await this.emitAudit(event("replayed"));
       return { request_id: request.request_id, status: "succeeded", result: claim.result, replayed: true };
+    }
+
+    if (STATE_CHANGING.has(sideEffect)) {
+      const approvalId = request.approval_id;
+      const claims = {
+        tenant_id: principal.tenant_id,
+        actor_id: principal.actor_id,
+        tool_id: request.tool_id,
+        invocation_id: request.invocation_id,
+        request_hash: requestHash,
+        side_effect: sideEffect,
+        operation_id: invocation.operation_id,
+        request_id: request.request_id
+      };
+      if (!invocation.operation_id || !approvalId || typeof this.approvalVerifier !== "function") {
+        throw new ToolInvocationError("APPROVAL_REQUIRED", "a valid approval bound to this exact operation is required", 403);
+      }
+      let approved = false;
+      try { approved = await this.approvalVerifier(approvalId, claims); }
+      catch {
+        await this.idempotencyStore.finish(ledgerKey, "failed");
+        throw new ToolInvocationError("APPROVAL_VERIFICATION_FAILED", "approval service is unavailable", 503);
+      }
+      if (!approved) {
+        await this.idempotencyStore.finish(ledgerKey, "failed");
+        throw new ToolInvocationError("APPROVAL_REQUIRED", "approval does not match this exact operation", 403);
+      }
     }
 
     try { await this.emitAudit(event("started")); }
