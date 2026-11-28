@@ -13,7 +13,7 @@ Shared contracts and runtime core for SYMBIOTYC plugin, Tool and Skill invocatio
 
 ## AMPHETAMIN host status
 
-The [`AMPHETAMIN/`](AMPHETAMIN/) directory now contains the source for the live Access-protected Cloudflare MCP Worker `symbiotyc-amphetamin-mcp`. PR #16 is merged and deployed. The current Worker exposes only read-only `group.health` through the TypeScript Skill Runtime → Tool Runtime adapter, D1 idempotency/audit, and private GROUP Service Binding. The remaining compute tools are withheld until their runtime and approval gates are implemented. See the [AMPHETAMIN deployment and source audit](docs/amphetamin-host-source-audit.md).
+The [`AMPHETAMIN/`](AMPHETAMIN/) directory now contains the source for the live Access-protected Cloudflare MCP Worker `symbiotyc-amphetamin-mcp`. PR #16 is merged and deployed. The current Worker exposes three read-only tools—`group.health`, `compute_capabilities`, and `compute_get_job`—through the TypeScript Skill Runtime → Tool Runtime adapter, D1 idempotency/audit, and private GROUP Service Binding. The state-changing `compute_submit_job` and `compute_cancel_job` tools remain withheld until the one-time approval verifier is implemented. See the [AMPHETAMIN deployment and source audit](docs/amphetamin-host-source-audit.md).
 
 ## Runtime core
 
@@ -28,4 +28,4 @@ The [`AMPHETAMIN/`](AMPHETAMIN/) directory now contains the source for the live 
 
 ## Operational boundary
 
-The Python Tool and Skill runtimes remain in-process reference cores. The live Cloudflare Worker uses a tested TypeScript parity adapter for the read-only `group.health` operation; it does not import Python code. The host authenticates through Cloudflare Access, derives tenant/actor/scopes server-side, and uses the shared GROUP D1 runtime ledger for idempotency and metadata-only audit. Compute writes remain withheld pending approval verification and end-to-end parity. Skill definitions are trusted server-side mappings; they cannot widen Tool scopes or execute arbitrary catalog text. All current awesome-selfhosted candidates remain discovery-only; no production dispatch is enabled.
+The Python Tool and Skill runtimes remain in-process reference cores. The live Cloudflare Worker uses a tested TypeScript parity adapter for the read-only `group.health` operation; it does not import Python code. The host authenticates through Cloudflare Access, derives tenant/actor/scopes server-side, and uses the shared GROUP D1 runtime ledger for idempotency and metadata-only audit. Compute writes and cancellation remain withheld pending approval verification and end-to-end parity. Skill definitions are trusted server-side mappings; they cannot widen Tool scopes or execute arbitrary catalog text. All current awesome-selfhosted candidates remain discovery-only; no production dispatch is enabled.

@@ -41,3 +41,8 @@ Cloudflare configuration read-back confirms the app, owner-only policy, OAuth/DC
 
 - https://developers.cloudflare.com/cloudflare-one/access-controls/ai-controls/secure-mcp-servers/
 - https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/
+
+
+## Read-only compute scope update — 2026-11-28
+
+The deployed Worker now grants the owner principal only `compute:read` and `compute:jobs:read`. These scopes are used by `group.health`, `compute_capabilities`, and `compute_get_job`. The Worker does not grant `compute:jobs:write`, `compute:jobs:cancel`, or approval scopes. The MCP tools `compute_submit_job` and `compute_cancel_job` remain unadvertised until a durable, single-use approval service binds approval to the exact tenant, project, actor, operation, and request hash.
