@@ -104,11 +104,11 @@ All three execute through Skill Runtime → Tool Runtime → D1-backed idempoten
 
 The AMPHETAMIN TypeScript host now contains `AMPHETAMIN/src/approval-verifier.mjs`, wired into `ToolRuntime` through a fail-closed callback.
 
-- The verifier accepts only the server-derived GROUP operation bindings `job.submit` → `submit_job` and `job.cancel` → `cancel_job`.
+- The verifier maps the trusted Tool invocation IDs `submit_job` and `cancel_job` to GROUP actions `job.submit` and `job.cancel` respectively. For submit, the concrete compute operation ID is derived from the validated `job_intent.operation_id` input field; for cancel, it is fixed to `job.cancel`.
 - It requires a UUID approval ID, UUID request correlation ID, exact Tool/Invocation identity, `write` side-effect class, and a 64-character lowercase SHA-256 request hash.
 - It consumes the approval only through the private `GROUP` Service Binding at `POST /v1/approvals/{approval_id}/consume`.
 - The forwarded GROUP principal is reconstructed with exactly one scope: `compute:approvals:consume`. Caller-provided scopes are not forwarded.
 - The verifier is disabled unless `GROUP_APPROVALS_LIVE=true`; production must leave this unset until the GROUP approval routes are deployed and verified.
 - Tool Runtime now includes trusted `operation_id` and `request_id` in verifier claims. Approval consumption occurs after a new idempotency claim and after replay resolution, preventing a successful replay from consuming the one-time approval again.
 
-This source change implements only the approval-consumption half of the workflow. It does not implement approval creation, expose submit/cancel tools, enable dispatch, or change the live Worker. The GROUP production Worker is still on the pre-approval version, so the consume endpoint is not yet live. Focused verifier tests are included; full CI and integration evidence must pass before merge.
+This source change implements only the approval-consumption half of the workflow. It does not implement approval creation, expose submit/cancel tools, enable dispatch, or change the live Worker. The GROUP production Worker is still on the pre-approval version, so the consume endpoint is not yet live. PLUGINS PR #21 was merged at `8b69c756d6a5e757126b6f0f326ec4f7dde8372d`; the AMPHETAMIN host tests, edge tests, and Plugin contract CI all passed on the final PR head. Authenticated production integration remains outstanding.
