@@ -1,1 +1,1 @@
-AMPHETAMIN host source is not yet present in this directory. See [the source audit and integration gates](../docs/amphetamin-host-source-audit.md). This directory is a placeholder, not an MCP server.
+AMPHETAMIN MCP host source is maintained in [README.md](README.md) and `src/index.mjs`. The previous placeholder notice is superseded by the live Worker source and runtime-parity implementation.
