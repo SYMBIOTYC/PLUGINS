@@ -91,7 +91,7 @@ export class SkillRuntime {
     catch { throw new ToolInvocationError("AUDIT_UNAVAILABLE", "skill audit sink unavailable; execution is blocked", 503); }
   }
 
-  preflight(skill, definition) {
+  preflight(skill, definition, principal, request) {
     const steps = definition.steps;
     if (!Array.isArray(steps) || steps.length < 1 || steps.length > 32) {
       throw new ToolInvocationError("INVALID_SKILL_DEFINITION", "skill must define 1 to 32 sequential steps", 500);
@@ -117,13 +117,37 @@ export class SkillRuntime {
       if (tool?.status !== "verified" || invocation?.status !== "verified") {
         throw new ToolInvocationError("SKILL_DEPENDENCY_NOT_VERIFIED", "all Tool and Invocation dependencies must be verified before a Skill starts", 409);
       }
+      const requiredScopes = invocation.required_scopes || [];
+      if (!Array.isArray(requiredScopes) || !requiredScopes.every((scope) => principal.scopes.includes(scope))) {
+        throw new ToolInvocationError("INSUFFICIENT_SCOPE", "principal lacks a required Skill dependency scope", 403);
+      }
+      if (["write", "admin", "destructive"].includes(invocation.side_effect) && !request.approvals?.[step.id]) {
+        throw new ToolInvocationError("APPROVAL_REQUIRED", "all state-changing Skill steps require a pre-bound approval before the first step", 403);
+      }
+      const inputSchema = invocation.input_schema;
+      assertSchemaSupported(inputSchema);
+      const mappingKeys = Object.keys(step.input_mapping);
+      const allowedKeys = Object.keys(inputSchema.properties || {});
+      if (inputSchema.additionalProperties === false && mappingKeys.some((key) => !allowedKeys.includes(key))) {
+        throw new ToolInvocationError("INVALID_SKILL_DEFINITION", "step input mapping contains an undeclared target field", 500);
+      }
+      if ((inputSchema.required || []).some((key) => !mappingKeys.includes(key))) {
+        throw new ToolInvocationError("INVALID_SKILL_DEFINITION", "step input mapping does not provide every required input field", 500);
+      }
       if (!this.toolRuntime.handlers?.has(`${step.tool_id}:${step.invocation_id}`)) {
         throw new ToolInvocationError("ADAPTER_NOT_CONFIGURED", "a trusted adapter is missing from the Skill dependency graph", 503);
       }
       seen.add(step.id);
       prepared.push(step);
     }
-    return prepared;
+    const outputMapping = definition.output_mapping;
+    if (!outputMapping || typeof outputMapping !== "object" || Array.isArray(outputMapping) ||
+        !Object.entries(outputMapping).every(([key, value]) => typeof key === "string" && typeof value === "string")) {
+      throw new ToolInvocationError("INVALID_SKILL_DEFINITION", "skill output mapping is invalid", 500);
+    }
+    const allStepIds = new Set(prepared.map((step) => step.id));
+    for (const source of Object.values(outputMapping)) validateMappingPath(source, allStepIds, true);
+    return { steps: prepared, outputMapping };
   }
 
   async run(request, trustedPrincipal) {
@@ -150,7 +174,7 @@ export class SkillRuntime {
       throw error;
     }
 
-    const steps = this.preflight(skill, definition);
+    const { steps, outputMapping } = this.preflight(skill, definition, principal, request);
     let requestHash;
     try {
       requestHash = await sha256(canonicalJson({
@@ -212,17 +236,8 @@ export class SkillRuntime {
         context.steps[step.id] = await this.toolRuntime.invoke(toolRequest, principal);
       }
 
-      const outputMapping = definition.output_mapping;
-      if (!outputMapping || typeof outputMapping !== "object" || Array.isArray(outputMapping) ||
-          !Object.entries(outputMapping).every(([key, value]) => typeof key === "string" && typeof value === "string")) {
-        throw new ToolInvocationError("INVALID_SKILL_DEFINITION", "skill output mapping is invalid", 500);
-      }
-      const completedSteps = new Set(steps.map((step) => step.id));
       const result = {};
-      for (const [target, source] of Object.entries(outputMapping)) {
-        validateMappingPath(source, completedSteps, true);
-        result[target] = resolvePath(source, context);
-      }
+      for (const [target, source] of Object.entries(outputMapping)) result[target] = resolvePath(source, context);
       validateSchema(definition.output_schema, result);
       const safeResult = JSON.parse(JSON.stringify(result));
       await this.emitAudit(event("succeeded"));
