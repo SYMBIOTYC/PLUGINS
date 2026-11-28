@@ -58,10 +58,10 @@ export const SKILL_DEFINITIONS = {
       }
     ],
     output_mapping: {
-      status: "steps.health.result.result.status",
-      service: "steps.health.result.result.service",
-      protocol: "steps.health.result.result.protocol",
-      dispatch_enabled: "steps.health.result.result.dispatch_enabled"
+      status: "steps.health.result.status",
+      service: "steps.health.result.service",
+      protocol: "steps.health.result.protocol",
+      dispatch_enabled: "steps.health.result.dispatch_enabled"
     }
   }
 };
