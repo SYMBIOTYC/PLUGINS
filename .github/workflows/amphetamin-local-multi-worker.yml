@@ -69,15 +69,46 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
+          # Cloudflare's local Service Binding discovery connects separate
+          # Wrangler dev sessions by the target Worker's configured name.
+          npx --yes wrangler@latest dev --local --ip 127.0.0.1 --port 8788 \
+            --config GROUP/wrangler.integration.jsonc > /tmp/group-wrangler.log 2>&1 &
+          GROUP_PID=$!
+
           npx --yes wrangler@latest dev --local --ip 127.0.0.1 --port 8787 \
             --config AMPHETAMIN/tests/fixtures/wrangler.integration.toml \
-            --config GROUP/wrangler.integration.jsonc > /tmp/amphetamin-wrangler.log 2>&1 &
-          WRANGLER_PID=$!
+            > /tmp/amphetamin-wrangler.log 2>&1 &
+          AMPHETAMIN_PID=$!
+
           cleanup() {
-            kill "$WRANGLER_PID" 2>/dev/null || true
-            wait "$WRANGLER_PID" 2>/dev/null || true
+            kill "$AMPHETAMIN_PID" "$GROUP_PID" 2>/dev/null || true
+            wait "$AMPHETAMIN_PID" 2>/dev/null || true
+            wait "$GROUP_PID" 2>/dev/null || true
+            echo "::group::GROUP Wrangler log"
+            cat /tmp/group-wrangler.log
+            echo "::endgroup::"
+            echo "::group::AMPHETAMIN Wrangler log"
             cat /tmp/amphetamin-wrangler.log
+            echo "::endgroup::"
           }
           trap cleanup EXIT
+
+          # Wait for both local processes before sending the MCP request.
+          for port in 8788 8787; do
+            ready=0
+            for attempt in $(seq 1 120); do
+              if (echo > "/dev/tcp/127.0.0.1/$port") >/dev/null 2>&1; then
+                ready=1
+                break
+              fi
+              sleep 0.25
+            done
+            if [ "$ready" -ne 1 ]; then
+              echo "Wrangler Worker on port $port did not become ready"
+              exit 1
+            fi
+          done
+
           AMPHETAMIN_LOCAL_URL=http://127.0.0.1:8787 \
             node AMPHETAMIN/tests/local-multi-worker.integration.mjs
