@@ -1,6 +1,6 @@
 # AMPHETAMIN MCP Edge
 
-**Status:** Live Cloudflare Access-protected MCP Worker. PR #16 is merged and deployed; the active Worker version is `f79793c3-0c0c-48e6-8d26-5990fbbf06a3` (100% traffic).
+**Status:** Live Cloudflare Access-protected MCP Worker. PR #18 is merged and deployed; the active Worker version is `bd9f2f99-4b56-41b7-9e57-73efd98f4800` (100% traffic).
 
 ## Live service boundary
 
@@ -13,11 +13,11 @@
 
 ## Runtime integration stage
 
-The exposed `group.health` MCP tool now executes through:
+The three exposed read-only MCP tools execute through:
 
 `MCP request → verified Skill → verified Tool/Invocation → trusted GROUP Service Binding adapter`
 
-The runtime layer includes strict request/schema validation, trusted server-side handlers, tenant-scoped D1 idempotency, append-only metadata-only audit, preflight validation, and unknown-outcome quarantine.
+The runtime layer includes strict request/schema validation, trusted server-side handlers, tenant-scoped D1 idempotency, append-only metadata-only audit, preflight validation, and unknown-outcome quarantine. A source-level GROUP approval consumer is now integrated into the Tool Runtime; it is gated by `GROUP_APPROVALS_LIVE=true`, requires an operation-bound approval ID, and uses a consume-only principal. The gate remains unset/false in production.
 
 This is a parity adapter implemented in TypeScript for the Cloudflare Worker. The original Python Tool/Skill Runtime remains authoritative in the PLUGINS root and is not imported by this Worker. The adapter is deliberately limited to the verified read-only health operation at this stage.
 
@@ -30,7 +30,7 @@ This staged reduction is intentional: no operation may bypass the runtime bounda
 
 ## Identity and trust
 
-Cloudflare Access must authenticate the request before the Worker executes. The Worker maps the single owner identity to the configured `symbiotyc/compute` tenant/project and grants `compute:read` and `compute:jobs:read` in this release. Actor identity is pseudonymized as `access:<SHA-256>`; raw email is not forwarded to GROUP or written to audit.
+Cloudflare Access must authenticate the request before the Worker executes. The Worker maps the single owner identity to the configured `symbiotyc/compute` tenant/project. Read-only requests receive only the read scopes required by their Tool; the approval consumer independently constructs a GROUP principal containing only `compute:approvals:consume`. Actor identity is pseudonymized as `access:<SHA-256>`; raw email is not forwarded to GROUP or written to audit.
 
 This is a single-owner, single-project mapping, not general multi-tenant IAM. The Access allow policy must remain restricted to the intended owner. MCP arguments cannot supply tenant, project, actor, or scopes.
 
@@ -58,4 +58,4 @@ Before upgrading the live Worker:
 5. verify the Access-protected MCP initialize/tools/list and a real `group.health` call;
 6. confirm the D1 audit row and idempotency row are recorded without secrets or raw email.
 
-Production deployment is complete. Cloudflare read-back confirms the active version, D1 binding, private GROUP binding, owner-only Access policy, OAuth/DCR configuration, `workers.dev=true`, and `previews_enabled=false`. A full authenticated external MCP handshake and a production `group.health` invocation remain outstanding; do not claim end-to-end request success until those are observed.
+Production deployment is complete. Cloudflare read-back confirms the active version, D1 binding, private GROUP binding, owner-only Access policy, OAuth/DCR configuration, `workers.dev=true`, and `previews_enabled=false`. A full authenticated external MCP handshake and production read-only tool invocation remain outstanding; do not claim end-to-end request success until those are observed. The GROUP Worker remains on its pre-approval live version; the approval routes are not active there.
