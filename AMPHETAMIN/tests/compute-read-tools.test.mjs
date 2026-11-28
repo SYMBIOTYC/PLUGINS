@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { handleRequest } from "../src/index.mjs";
 import { FakeD1 } from "./fake-d1.mjs";
 
-const identity = { access: { getIdentity: async () => ({ email: "owner@example.invalid", id: "access-owner-1" }) } };
+const identity = { access: { aud: "test-access-audience", getIdentity: async () => ({ email: "owner@example.invalid", id: "access-owner-1" }) } };
 const JOB_ID = "2b8c2d6f-2f1d-4e8c-9d1c-9a8f3e5b7c10";
 const envFor = (fetch) => ({
   COMPUTE_TENANT_ID: "symbiotyc",
