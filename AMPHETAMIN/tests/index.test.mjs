@@ -22,9 +22,9 @@ test("initializes a stateless MCP session", async () => {
   assert.equal(payload.result.protocolVersion, "2025-03-26");
   assert.equal(payload.result.serverInfo.name, "symbiotyc-amphetamin");
 });
-test("advertises only verified read-only tools", async () => {
+test("advertises verified read and policy-compute tools without write operations", async () => {
   const payload = await (await handleRequest(rpc("tools/list"), baseEnv(), access)).json();
-  assert.deepEqual(payload.result.tools.map(tool => tool.name), ["group.health", "compute_capabilities", "compute_get_job"]);
+  assert.deepEqual(payload.result.tools.map(tool => tool.name), ["group.health", "compute_capabilities", "compute_get_job", "compute_activation_evaluate"]);
   assert.equal(payload.result.tools.every(tool => tool.inputSchema.additionalProperties === false), true);
 });
 test("executes group.health through Skill Runtime, Tool Runtime, and private GROUP binding", async () => {
