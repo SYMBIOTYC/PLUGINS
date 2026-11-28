@@ -55,3 +55,18 @@ It had no `plugin.json`, `.codex-plugin/plugin.json`, `mcp.json`, `.mcp.json`, s
 The principal assertion in the GROUP contract is trusted only over the private Service Binding from the single approved AMPHETAMIN Worker. It is not a cryptographic credential and must never be accepted over a public route. The external MCP client must be authenticated by AMPHETAMIN before a principal is created.
 
 No Worker, secret, route, D1 database, or production deployment was changed during this source audit.
+
+
+## Bootstrap authorization and runtime compatibility gate
+
+On 2026-11-28 the user authorized bootstrapping a new AMPHETAMIN MCP host in this reserved directory and requested that the decision be recorded in the Cloud Wiki. This is authorization for source development and verification, not production deployment, provisioning, public ingress, or changes to live Workers.
+
+The existing Tool and Skill Runtime cores are Python in-process modules. A TypeScript Cloudflare Worker cannot import them directly. Conversely, an ordinary external Python process cannot directly use a Cloudflare Worker Service Binding to GROUP. The host/runtime placement is therefore a blocking architecture decision, not an implementation detail.
+
+Before exposing tools, compare and test these options:
+
+1. Python MCP host with the existing Python runtime embedded, plus a verified private integration path to GROUP.
+2. Cloudflare Worker MCP edge with a separately authenticated Python runtime service and a private Service Binding to GROUP.
+3. A TypeScript port of Tool/Skill Runtime with behavioral parity tests before replacing or duplicating the Python implementation.
+
+The compatibility spike must prove SDK/runtime support, authentication and principal derivation, private GROUP reachability, durable idempotency, approval verification, metadata-only audit, timeout/unknown-outcome handling, and tenant isolation. Do not enable a tool that invokes GROUP until the selected topology passes integration tests. See the [Cloud Wiki architecture decision and gates](https://github.com/SYMBIOTYC/SYMBIOTYC-CLOUD-WIKI/blob/main/Architecture/Compute-Infrastructure/AMPHETAMIN-MCP.md).
