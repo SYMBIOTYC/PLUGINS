@@ -13,31 +13,61 @@
       "group_repository": "SYMBIOTYC/GROUP",
       "group_commit": "5e56635c340a1e5dff871fe8e148c00ce960328a"
     },
-    "naming_note": "Proposed logical names only. Confirm account-wide uniqueness before provisioning."
+    "naming_note": "Proposed logical names only. Confirm account-wide uniqueness before provisioning.",
+    "secret_inventory_note": "No secret bindings are declared in the inspected AMPHETAMIN entrypoint or GROUP Worker entrypoint; audit the complete runtime dependency graph before provisioning. Never store secret values here."
   },
   "resources": {
     "workers": {
       "amphetamin": {
         "name": "symbiotyc-amphetamin-mcp-staging",
-        "ingress": { "workers_dev": false, "preview_urls": false, "public_routes": [], "custom_domains": [] },
-        "bindings": {
-          "GROUP": { "type": "service", "service": "symbiotyc-group-control-plane-staging" },
-          "RUNTIME_DB": { "type": "d1", "database_name": "symbiotyc-group-compute-state-staging", "database_id": null }
+        "ingress": {
+          "workers_dev": false,
+          "preview_urls": false,
+          "public_routes": [],
+          "custom_domains": []
         },
-        "vars": { "COMPUTE_TENANT_ID": null, "COMPUTE_PROJECT_ID": null }
+        "bindings": {
+          "GROUP": {
+            "type": "service",
+            "service": "symbiotyc-group-control-plane-staging"
+          },
+          "RUNTIME_DB": {
+            "type": "d1",
+            "database_name": "symbiotyc-group-compute-state-staging",
+            "database_id": null
+          }
+        },
+        "vars": {
+          "COMPUTE_TENANT_ID": null,
+          "COMPUTE_PROJECT_ID": null,
+          "MCP_ALLOWED_ORIGINS": "https://chatgpt.com,https://chat.openai.com"
+        }
       },
       "group": {
         "name": "symbiotyc-group-control-plane-staging",
-        "ingress": { "workers_dev": false, "preview_urls": false, "routes": [], "custom_domains": [], "service_binding_only": true },
+        "ingress": {
+          "workers_dev": false,
+          "preview_urls": false,
+          "routes": [],
+          "custom_domains": [],
+          "service_binding_only": true
+        },
         "bindings": {
-          "DB": { "type": "d1", "database_name": "symbiotyc-group-compute-state-staging", "database_id": null }
+          "DB": {
+            "type": "d1",
+            "database_name": "symbiotyc-group-compute-state-staging",
+            "database_id": null
+          }
         }
       }
     },
     "d1": {
       "name": "symbiotyc-group-compute-state-staging",
       "database_id": null,
-      "consumers": ["AMPHETAMIN.RUNTIME_DB", "GROUP.DB"],
+      "consumers": [
+        "AMPHETAMIN.RUNTIME_DB",
+        "GROUP.DB"
+      ],
       "migration_owner": "GROUP",
       "apply_migrations_automatically": false,
       "expected_migrations": [
@@ -64,7 +94,8 @@
         "Do not use a broad email-domain rule as the sole authorization condition.",
         "Verify application and policy attachment to the exact hostname before edge tests.",
         "Record policy ID, application ID, hostname, and read-back timestamp as approval evidence."
-      ]
+      ],
+      "worker_target": "symbiotyc-amphetamin-mcp-staging"
     }
   },
   "identity": {
@@ -76,10 +107,7 @@
     "decision_required_before_provisioning": true,
     "note": "Confirm single-tenant versus multi-tenant staging. Do not infer shared tenant/project mapping from current code."
   },
-  "secret_references": [
-    { "name": "COMPUTE_SIGNING_KEY", "source": "Cloudflare Worker secret store", "value": null },
-    { "name": "MCP_AUTH_SECRET", "source": "Cloudflare Worker secret store", "value": null }
-  ],
+  "secret_references": [],
   "provisioning_sequence": [
     "Approve staging identity model and exact allowed Access subjects.",
     "Read back production Worker names, Service Binding target, D1 ID, and Access policy as comparison evidence.",
