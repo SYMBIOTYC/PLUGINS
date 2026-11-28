@@ -70,3 +70,13 @@ Production deployment is complete. Cloudflare read-back confirms the active vers
 For `submit_job`, the verifier maps the invocation to GROUP action `job.submit`, while the operation ID is derived from the validated `job_intent.operation_id` field and bound into the exact Tool request hash. For `cancel_job`, the action and operation ID are both fixed to `job.cancel`. The verifier forwards only `compute:approvals:consume` through the private GROUP Service Binding.
 
 The verifier remains disabled unless `GROUP_APPROVALS_LIVE=true`. The live GROUP Worker still runs its pre-approval version, so approval creation and consumption routes are not active in production. No submit/cancel tools are advertised, and no dispatch or production Worker update was performed.
+
+
+## Cloudflare Access OAuth client callbacks — 2026-11-28
+
+The production Access application has Managed OAuth and Dynamic Client Registration enabled. Its DCR redirect allowlist was incomplete: localhost and loopback clients were allowed, but ChatGPT's HTTPS callback URIs were not listed. The live Access application was updated and read back with these exact allowlist entries:
+
+- `https://chatgpt.com/connector_platform_oauth_redirect` — stable ChatGPT callback.
+- `https://chatgpt.com/connector/oauth/*` — callback-ID-specific ChatGPT callback path.
+
+The existing owner-only Access allow policy, 12-hour Access session, Worker deployment, GROUP Service Binding, and D1 binding were preserved. This fixes the callback allowlist gap; it does not by itself prove DCR registration, browser authorization, MCP initialize/tools/list, or a real tool invocation. Those authenticated end-to-end checks remain outstanding.
