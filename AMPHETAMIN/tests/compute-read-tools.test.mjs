@@ -117,7 +117,7 @@ test("compute_get_job rejects malformed identifiers before calling GROUP", async
   }), env, identity)).json();
   assert.equal(called, false);
   assert.equal(payload.result.isError, true);
-  assert.match(payload.result.content[0].text, /INVALID_INPUT/);
+  assert.match(payload.result.content[0].text, /INVALID_SKILL_INPUT/);
 });
 
 test("compute tool arguments cannot override tenant or project", async () => {
@@ -128,7 +128,7 @@ test("compute tool arguments cannot override tenant or project", async () => {
   }), env, identity)).json();
   assert.equal(called, false);
   assert.equal(payload.result.isError, true);
-  assert.match(payload.result.content[0].text, /INVALID_INPUT/);
+  assert.match(payload.result.content[0].text, /INVALID_SKILL_INPUT/);
 });
 
 test("compute reads fail closed when the trusted project mapping is missing", async () => {
