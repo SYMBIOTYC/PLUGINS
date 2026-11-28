@@ -59,6 +59,25 @@ export function validateManifestAgainstConfigs(manifest, stagingAmphetamin, stag
   add(Boolean(amp && group && d1), "Manifest worker and D1 topology is incomplete");
   if (!amp || !group || !d1) return { ok: false, errors };
 
+  const authorizationFlags = [
+    manifest?.metadata?.provisioning_authorized,
+    manifest?.metadata?.deploy_authorized,
+    manifest?.approval?.production_comparison_complete,
+    manifest?.approval?.proposed_names_confirmed_unique,
+    manifest?.approval?.identity_model_approved,
+    manifest?.approval?.explicit_provisioning_approval,
+    manifest?.approval?.access_policy_verified,
+    manifest?.approval?.d1_migration_approval,
+    manifest?.approval?.edge_smoke_test_approval,
+    manifest?.approval?.deploy_allowed
+  ];
+  add(authorizationFlags.length === 10 && authorizationFlags.every((flag) => flag === false),
+    "Manifest authorization flags must remain false");
+  add(manifest?.resources?.access?.policy_verified === false,
+    "Manifest Access policy verification must remain false");
+  add(manifest?.identity?.model === "UNDECIDED",
+    "Manifest identity model must remain UNDECIDED until separately approved");
+
   add(stagingAmphetamin?.name === amp.name, "AMPHETAMIN Worker name differs from manifest");
   add(stagingGroup?.name === group.name, "GROUP Worker name differs from manifest");
   const service = stagingAmphetamin?.services?.filter((item) => item?.binding === "GROUP") ?? [];
