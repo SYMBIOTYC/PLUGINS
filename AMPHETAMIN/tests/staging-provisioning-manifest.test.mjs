@@ -20,6 +20,9 @@ test("manifest fixes the isolated Worker and Service Binding topology", async ()
   assert.equal(manifest.resources.workers.group.name, "symbiotyc-group-control-plane-staging");
   assert.equal(manifest.resources.workers.amphetamin.bindings.GROUP.service,
     manifest.resources.workers.group.name);
+  assert.equal(manifest.resources.access.worker_target, manifest.resources.workers.amphetamin.name);
+  assert.equal(manifest.resources.workers.amphetamin.vars.MCP_ALLOWED_ORIGINS,
+    "https://chatgpt.com,https://chat.openai.com");
   assert.equal(manifest.resources.workers.group.ingress.service_binding_only, true);
   assert.deepEqual(manifest.resources.workers.group.ingress.routes, []);
   assert.deepEqual(manifest.resources.workers.group.ingress.custom_domains, []);
@@ -47,7 +50,8 @@ test("manifest leaves Access identity and Cloudflare resource facts pending", as
 
 test("manifest references secret names only and contains no credential values", async () => {
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
-  assert.ok(Array.isArray(manifest.secret_references));
+  assert.deepEqual(manifest.secret_references, []);
+  assert.match(manifest.metadata.secret_inventory_note, /complete runtime dependency graph/);
   for (const item of manifest.secret_references) {
     assert.equal(typeof item.name, "string");
     assert.equal(item.value, undefined);
