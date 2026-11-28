@@ -45,7 +45,7 @@ test("accepts OAuth discovery with S256 and DCR", () => {
 
 test("rejects issuer mismatch, missing PKCE S256, and missing DCR endpoint", () => {
   assert.throws(() => validateOAuthDiscovery({
-    resourceMetadata: { resource: "https://mcp.example", authorization_servers: ["https://other.example"] },
+    resourceMetadata: { resource: "https://mcp.example", authorization_servers: ["https://expected-issuer.example"] },
     authorizationServerMetadata: { issuer: "https://other.example", authorization_endpoint: "https://other.example/a", token_endpoint: "https://other.example/t", registration_endpoint: "https://other.example/r", token_endpoint_auth_methods_supported: ["none"], code_challenge_methods_supported: ["S256"] },
     expectedResource: "https://mcp.example"
   }), /issuer/);
