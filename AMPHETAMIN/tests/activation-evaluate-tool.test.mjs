@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { handleRequest } from "../src/index.mjs";
 import { FakeD1 } from "./fake-d1.mjs";
 
-const identity = { access: { getIdentity: async () => ({ email: "owner@example.invalid", id: "access-owner-1" }) } };
+const identity = { access: { aud: "test-access-audience", getIdentity: async () => ({ email: "owner@example.invalid", id: "access-owner-1" }) } };
 const telemetry = {
   backlog: 3,
   ambiguous_tasks: 0,
