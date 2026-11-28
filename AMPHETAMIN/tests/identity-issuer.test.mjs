@@ -208,12 +208,16 @@ test("WARP-style Access context with only aud still resolves the signed issuer a
 
 test("issuer mismatch, audience mismatch, expiry, and missing subject fail closed", async () => {
   await withAccessJwks(async () => {
+    const validToken = await signAccessJwt({ issuer: ISSUER_A });
+    const tamperedParts = validToken.split(".");
+    tamperedParts[2] = `${tamperedParts[2][0] === "A" ? "B" : "A"}${tamperedParts[2].slice(1)}`;
     const cases = [
       { label: "wrong issuer", token: await signAccessJwt({ issuer: ISSUER_B }) },
       { label: "wrong audience", token: await signAccessJwt({ audience: "another-audience" }) },
       { label: "expired token", token: await signAccessJwt({ exp: Math.floor(Date.now() / 1000) - 60 }) },
       { label: "missing subject", token: await signAccessJwt({ subject: "" }) },
-      { label: "malformed token", token: "not-a-jwt" }
+      { label: "malformed token", token: "not-a-jwt" },
+      { label: "invalid signature", token: tamperedParts.join(".") }
     ];
     for (const item of cases) {
       const response = await handleRequest(rpcRequest(item.token), {
