@@ -1,8 +1,13 @@
+import { D1AuditSink, D1IdempotencyStore } from "./runtime/d1-adapters.mjs";
+import { ToolRuntime } from "./runtime/tool-runtime.mjs";
+import { SkillRuntime } from "./runtime/skill-runtime.mjs";
+import { TOOL_REGISTRY, SKILL_REGISTRY, SKILL_DEFINITIONS } from "./runtime/registry.mjs";
+
 export const MAX_REQUEST_BYTES = 64 * 1024;
 const MAX_GROUP_RESPONSE_BYTES = 8 * 1024;
 const SERVER_INFO = Object.freeze({
   name: "symbiotyc-amphetamin",
-  version: "0.1.0"
+  version: "0.2.0"
 });
 const PROTOCOL_VERSION = "2025-03-26";
 
@@ -26,14 +31,34 @@ function hasRequestId(message) {
   return Object.prototype.hasOwnProperty.call(message, "id");
 }
 
-async function hasAccessIdentity(ctx) {
-  if (!ctx?.access || typeof ctx.access.getIdentity !== "function") return false;
+async function getAccessIdentity(ctx) {
+  if (!ctx?.access || typeof ctx.access.getIdentity !== "function") return null;
   try {
     const identity = await ctx.access.getIdentity();
-    return Boolean(identity && typeof identity.email === "string" && identity.email.length > 0);
+    return identity && typeof identity.email === "string" && identity.email.length > 0
+      ? identity
+      : null;
   } catch {
-    return false;
+    return null;
   }
+}
+
+async function derivePrincipal(identity, env) {
+  const stableSubject = typeof identity.id === "string" && identity.id
+    ? identity.id
+    : identity.email.trim().toLowerCase();
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(stableSubject));
+  const actorHash = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  return {
+    tenant_id: env.TENANT_ID || "symbiotyc-owner",
+    actor_id: `access:${actorHash}`,
+    scopes: ["compute:read"]
+  };
+}
+
+async function sha256Text(value) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 async function readLimited(request) {
@@ -69,7 +94,7 @@ async function readLimited(request) {
 function toolList() {
   return [{
     name: "group.health",
-    description: "Read the health and dispatch-disabled status of the private GROUP control plane. This tool does not create or dispatch compute jobs.",
+    description: "Run the verified read-only GROUP health Skill through the Tool/Skill Runtime. This operation does not create or dispatch compute jobs.",
     inputSchema: {
       type: "object",
       properties: {},
@@ -113,6 +138,41 @@ async function readGroupHealth(env) {
   };
 }
 
+async function executeGroupHealth(env, principal, requestId) {
+  if (!env?.RUNTIME_DB || typeof env.RUNTIME_DB.prepare !== "function") {
+    throw new Error("durable Tool/Skill Runtime database binding is unavailable");
+  }
+  const audit = new D1AuditSink(env.RUNTIME_DB);
+  const toolRuntime = new ToolRuntime(
+    TOOL_REGISTRY,
+    { "symbiotyc.group:health": async () => readGroupHealth(env) },
+    {
+      idempotencyStore: new D1IdempotencyStore(env.RUNTIME_DB, "tool"),
+      auditSink: (event) => audit.append(event)
+    }
+  );
+  const skillRuntime = new SkillRuntime(
+    toolRuntime,
+    SKILL_REGISTRY,
+    SKILL_DEFINITIONS,
+    {
+      idempotencyStore: new D1IdempotencyStore(env.RUNTIME_DB, "skill"),
+      auditSink: (event) => audit.append(event)
+    }
+  );
+  const requestHash = await sha256Text(String(requestId));
+  const timeBucket = Math.floor(Date.now() / 30000);
+  const idempotencyKey = `mcp:${principal.actor_id.slice(-24)}:${requestHash.slice(0, 16)}:${timeBucket}`;
+  const run = await skillRuntime.run({
+    schema_version: "1.0",
+    run_id: crypto.randomUUID(),
+    skill_id: "skill.symbiotyc.group-health",
+    idempotency_key: idempotencyKey,
+    input: {}
+  }, principal);
+  return run.result;
+}
+
 function toolTextResult(value, isError = false) {
   return {
     content: [{ type: "text", text: JSON.stringify(value) }],
@@ -125,14 +185,15 @@ export async function handleRequest(request, env, ctx) {
   if (url.pathname !== "/mcp" && url.pathname !== "/health") {
     return json({ ok: false, error: "not_found" }, 404);
   }
-  if (!await hasAccessIdentity(ctx)) {
+  const identity = await getAccessIdentity(ctx);
+  if (!identity) {
     return json({ ok: false, error: "access_authentication_required" }, 401, {
       "www-authenticate": "Bearer"
     });
   }
   if (url.pathname === "/health") {
     if (request.method !== "GET") return new Response(null, { status: 405, headers: { allow: "GET" } });
-    return json({ ok: true, service: SERVER_INFO.name, version: SERVER_INFO.version });
+    return json({ ok: true, service: SERVER_INFO.name, version: SERVER_INFO.version, runtime: "tool-skill-v1" });
   }
   if (request.method !== "POST") {
     return new Response(null, { status: 405, headers: { allow: "POST" } });
@@ -198,16 +259,15 @@ export async function handleRequest(request, env, ctx) {
       return rpcError(id, -32602, "group.health accepts no arguments");
     }
     try {
-      const result = await readGroupHealth(env);
+      const principal = await derivePrincipal(identity, env);
+      const result = await executeGroupHealth(env, principal, id);
       return json({ jsonrpc: "2.0", id, result: toolTextResult(result) });
     } catch (error) {
-      const message = error instanceof Error && error.message === "GROUP service binding is unavailable"
-        ? error.message
-        : "GROUP health check failed";
+      const code = typeof error?.code === "string" ? error.code : "RUNTIME_EXECUTION_FAILED";
       return json({
         jsonrpc: "2.0",
         id,
-        result: toolTextResult({ ok: false, error: message }, true)
+        result: toolTextResult({ ok: false, error: code }, true)
       });
     }
   }
