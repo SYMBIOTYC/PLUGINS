@@ -79,11 +79,11 @@ jobs:
 
           # Cloudflare's local Service Binding discovery connects separate
           # Wrangler dev sessions by the target Worker's configured name.
-          npx --yes wrangler@latest dev --local --ip 127.0.0.1 --port 8788 \
+          npx --yes wrangler@latest dev --local --ip 127.0.0.1 --port 8788 --inspector-port 9230 \
             --config GROUP/wrangler.integration.jsonc > /tmp/group-wrangler.log 2>&1 &
           GROUP_PID=$!
 
-          npx --yes wrangler@latest dev --local --ip 127.0.0.1 --port 8787 \
+          npx --yes wrangler@latest dev --local --ip 127.0.0.1 --port 8787 --inspector-port 9231 \
             --config AMPHETAMIN/tests/fixtures/wrangler.integration.toml \
             > /tmp/amphetamin-wrangler.log 2>&1 &
           AMPHETAMIN_PID=$!
