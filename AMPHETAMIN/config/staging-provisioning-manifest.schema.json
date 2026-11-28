@@ -1,0 +1,164 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://symbiotyc.dev/schemas/staging-provisioning-manifest.schema.json",
+  "title": "SYMBIOTYC AMPHETAMIN + GROUP staging provisioning manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["manifest_version", "kind", "metadata", "resources", "identity", "secret_references", "provisioning_sequence", "approval", "hard_stops"],
+  "properties": {
+    "manifest_version": { "const": "1.0.0" },
+    "kind": { "const": "SymbiotycStagingProvisioningManifest" },
+    "metadata": {
+      "type": "object", "additionalProperties": false,
+      "required": ["name", "environment", "status", "provisioning_authorized", "deploy_authorized", "production_baseline", "naming_note"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "environment": { "const": "staging" },
+        "status": { "const": "PROPOSED_NOT_PROVISIONED" },
+        "provisioning_authorized": { "const": false },
+        "deploy_authorized": { "const": false },
+        "production_baseline": {
+          "type": "object", "additionalProperties": false,
+          "required": ["amphetamin_repository", "amphetamin_commit", "group_repository", "group_commit"],
+          "properties": {
+            "amphetamin_repository": { "const": "SYMBIOTYC/PLUGINS" },
+            "amphetamin_commit": { "type": "string", "pattern": "^[a-f0-9]{40}$" },
+            "group_repository": { "const": "SYMBIOTYC/GROUP" },
+            "group_commit": { "type": "string", "pattern": "^[a-f0-9]{40}$" }
+          }
+        },
+        "naming_note": { "type": "string", "minLength": 1 }
+      }
+    },
+    "resources": {
+      "type": "object", "additionalProperties": false, "required": ["workers", "d1", "access"],
+      "properties": {
+        "workers": {
+          "type": "object", "additionalProperties": false, "required": ["amphetamin", "group"],
+          "properties": {
+            "amphetamin": { "$ref": "#/$defs/amphetaminWorker" },
+            "group": { "$ref": "#/$defs/groupWorker" }
+          }
+        },
+        "d1": {
+          "type": "object", "additionalProperties": false,
+          "required": ["name", "database_id", "consumers", "migration_owner", "apply_migrations_automatically", "expected_migrations", "require_production_database_id_mismatch", "require_production_database_name_mismatch", "require_data_isolation"],
+          "properties": {
+            "name": { "type": "string", "minLength": 1 },
+            "database_id": { "type": ["string", "null"] },
+            "consumers": { "const": ["AMPHETAMIN.RUNTIME_DB", "GROUP.DB"] },
+            "migration_owner": { "const": "GROUP" },
+            "apply_migrations_automatically": { "const": false },
+            "expected_migrations": { "type": "array", "minItems": 4, "items": { "type": "string" } },
+            "require_production_database_id_mismatch": { "const": true },
+            "require_production_database_name_mismatch": { "const": true },
+            "require_data_isolation": { "const": true }
+          }
+        },
+        "access": {
+          "type": "object", "additionalProperties": false,
+          "required": ["application_name", "application_id", "hostname", "policy_verified", "default_action", "allowed_subjects", "allow_policy", "requirements"],
+          "properties": {
+            "application_name": { "type": ["string", "null"] },
+            "application_id": { "type": ["string", "null"] },
+            "hostname": { "type": ["string", "null"] },
+            "policy_verified": { "const": false },
+            "default_action": { "const": "BLOCK" },
+            "allowed_subjects": { "type": "array", "items": { "type": "string" } },
+            "allow_policy": { "type": ["object", "null"] },
+            "requirements": { "type": "array", "minItems": 5, "items": { "type": "string" } }
+          }
+        }
+      }
+    },
+    "identity": {
+      "type": "object", "additionalProperties": false,
+      "required": ["model", "allowed_subjects", "tenant_id", "project_id", "subject_to_tenant_mapping", "decision_required_before_provisioning", "note"],
+      "properties": {
+        "model": { "const": "UNDECIDED" },
+        "allowed_subjects": { "type": "array", "items": { "type": "string" } },
+        "tenant_id": { "type": ["string", "null"] },
+        "project_id": { "type": ["string", "null"] },
+        "subject_to_tenant_mapping": { "type": ["object", "null"] },
+        "decision_required_before_provisioning": { "const": true },
+        "note": { "type": "string" }
+      }
+    },
+    "secret_references": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["name", "source", "value"],
+        "properties": { "name": { "type": "string" }, "source": { "type": "string" }, "value": { "const": null } }
+      }
+    },
+    "provisioning_sequence": { "type": "array", "minItems": 10, "items": { "type": "string" } },
+    "approval": {
+      "type": "object", "additionalProperties": false,
+      "required": ["production_comparison_complete", "proposed_names_confirmed_unique", "identity_model_approved", "explicit_provisioning_approval", "access_policy_verified", "d1_migration_approval", "edge_smoke_test_approval", "deploy_allowed"],
+      "properties": {
+        "production_comparison_complete": { "const": false },
+        "proposed_names_confirmed_unique": { "const": false },
+        "identity_model_approved": { "const": false },
+        "explicit_provisioning_approval": { "const": false },
+        "access_policy_verified": { "const": false },
+        "d1_migration_approval": { "const": false },
+        "edge_smoke_test_approval": { "const": false },
+        "deploy_allowed": { "const": false }
+      }
+    },
+    "hard_stops": { "type": "array", "minItems": 6, "items": { "type": "string" } }
+  },
+  "$defs": {
+    "ingress": {
+      "type": "object", "additionalProperties": false, "required": ["workers_dev", "preview_urls"],
+      "properties": {
+        "workers_dev": { "const": false },
+        "preview_urls": { "const": false },
+        "public_routes": { "type": "array", "maxItems": 0 },
+        "custom_domains": { "type": "array", "maxItems": 0 },
+        "routes": { "type": "array", "maxItems": 0 },
+        "service_binding_only": { "const": true }
+      }
+    },
+    "d1Binding": {
+      "type": "object", "additionalProperties": false, "required": ["type", "database_name", "database_id"],
+      "properties": {
+        "type": { "const": "d1" },
+        "database_name": { "const": "symbiotyc-group-compute-state-staging" },
+        "database_id": { "type": ["string", "null"] }
+      }
+    },
+    "amphetaminWorker": {
+      "type": "object", "additionalProperties": false, "required": ["name", "ingress", "bindings", "vars"],
+      "properties": {
+        "name": { "const": "symbiotyc-amphetamin-mcp-staging" },
+        "ingress": { "$ref": "#/$defs/ingress" },
+        "bindings": {
+          "type": "object", "additionalProperties": false, "required": ["GROUP", "RUNTIME_DB"],
+          "properties": {
+            "GROUP": {
+              "type": "object", "additionalProperties": false, "required": ["type", "service"],
+              "properties": { "type": { "const": "service" }, "service": { "const": "symbiotyc-group-control-plane-staging" } }
+            },
+            "RUNTIME_DB": { "$ref": "#/$defs/d1Binding" }
+          }
+        },
+        "vars": {
+          "type": "object", "additionalProperties": false, "required": ["COMPUTE_TENANT_ID", "COMPUTE_PROJECT_ID"],
+          "properties": { "COMPUTE_TENANT_ID": { "type": ["string", "null"] }, "COMPUTE_PROJECT_ID": { "type": ["string", "null"] } }
+        }
+      }
+    },
+    "groupWorker": {
+      "type": "object", "additionalProperties": false, "required": ["name", "ingress", "bindings"],
+      "properties": {
+        "name": { "const": "symbiotyc-group-control-plane-staging" },
+        "ingress": { "$ref": "#/$defs/ingress" },
+        "bindings": {
+          "type": "object", "additionalProperties": false, "required": ["DB"],
+          "properties": { "DB": { "$ref": "#/$defs/d1Binding" } }
+        }
+      }
+    }
+  }
+}
