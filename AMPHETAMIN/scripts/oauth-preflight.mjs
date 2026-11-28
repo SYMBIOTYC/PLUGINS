@@ -49,7 +49,7 @@ export function validateOAuthDiscovery({
   requireHttpsUrl(expectedResource, "expected resource");
   requireHttpsUrl(resourceMetadata.resource, "resource");
   if (resourceMetadata.resource !== expectedResource) {
-    throw new Error("Protected Resource Metadata resource does not match the MCP origin");
+    throw new Error(`Protected Resource Metadata resource mismatch: advertised=${resourceMetadata.resource}; expected=${expectedResource}`);
   }
 
   const metadata = authorizationServerMetadata;
