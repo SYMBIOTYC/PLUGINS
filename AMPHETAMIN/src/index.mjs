@@ -268,6 +268,9 @@ async function evaluateGroupActivation(env, principal, input) {
   if (!body || typeof body !== "object" || Array.isArray(body)) {
     throw new Error("GROUP returned an invalid policy response object");
   }
+  if (response.status >= 500) {
+    throw new Error("GROUP policy evaluation failed");
+  }
   return { status_code: response.status, body };
 }
 
