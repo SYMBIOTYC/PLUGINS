@@ -3,6 +3,7 @@ import { TOOL_INVOCATION_REQUEST_SCHEMA } from "./schemas.mjs";
 
 const STATE_CHANGING = new Set(["write", "admin", "destructive"]);
 const SIDE_EFFECTS = new Set(["read", "compute", "write", "admin", "destructive"]);
+const OPERATION_ID_RE = /^[a-z][a-z0-9_.-]{1,127}$/;
 
 export class ToolInvocationError extends Error {
   constructor(code, message, statusCode = 400) {
@@ -34,6 +35,20 @@ async function sha256(value) {
   const bytes = new TextEncoder().encode(value);
   const digest = await crypto.subtle.digest("SHA-256", bytes);
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function resolveOperationId(invocation, input) {
+  if (invocation.operation_id_from_input === "job_intent.operation_id") {
+    const operationId = input?.job_intent?.operation_id;
+    if (typeof operationId !== "string" || !OPERATION_ID_RE.test(operationId)) {
+      throw new ToolInvocationError("INVALID_INPUT", "JobIntent operation_id is invalid", 422);
+    }
+    return operationId;
+  }
+  if (typeof invocation.operation_id === "string" && OPERATION_ID_RE.test(invocation.operation_id)) {
+    return invocation.operation_id;
+  }
+  return null;
 }
 
 function assertPrincipal(principal) {
@@ -99,6 +114,7 @@ export class ToolRuntime {
       }
       throw error;
     }
+    const operationId = STATE_CHANGING.has(sideEffect) ? resolveOperationId(invocation, request.input) : null;
     const handler = this.handlers.get(`${request.tool_id}:${request.invocation_id}`);
     if (typeof handler !== "function") throw new ToolInvocationError("ADAPTER_NOT_CONFIGURED", "no trusted adapter is registered for this operation", 503);
 
@@ -114,25 +130,6 @@ export class ToolRuntime {
       requestHash = await sha256(canonicalJson(normalized));
     } catch {
       throw new ToolInvocationError("INVALID_INPUT", "invocation input is not canonical JSON", 422);
-    }
-
-    if (STATE_CHANGING.has(sideEffect)) {
-      const approvalId = request.approval_id;
-      const claims = {
-        tenant_id: principal.tenant_id,
-        actor_id: principal.actor_id,
-        tool_id: request.tool_id,
-        invocation_id: request.invocation_id,
-        request_hash: requestHash,
-        side_effect: sideEffect
-      };
-      if (!approvalId || typeof this.approvalVerifier !== "function") {
-        throw new ToolInvocationError("APPROVAL_REQUIRED", "a valid approval bound to this exact operation is required", 403);
-      }
-      let approved = false;
-      try { approved = await this.approvalVerifier(approvalId, claims); }
-      catch { throw new ToolInvocationError("APPROVAL_VERIFICATION_FAILED", "approval service is unavailable", 503); }
-      if (!approved) throw new ToolInvocationError("APPROVAL_REQUIRED", "approval does not match this exact operation", 403);
     }
 
     const ledgerKey = { tenant_id: principal.tenant_id, idempotency_key: request.idempotency_key };
@@ -159,6 +156,34 @@ export class ToolRuntime {
     if (claim.state === "replay") {
       await this.emitAudit(event("replayed"));
       return { request_id: request.request_id, status: "succeeded", result: claim.result, replayed: true };
+    }
+
+    if (STATE_CHANGING.has(sideEffect)) {
+      const approvalId = request.approval_id;
+      const claims = {
+        tenant_id: principal.tenant_id,
+        actor_id: principal.actor_id,
+        tool_id: request.tool_id,
+        invocation_id: request.invocation_id,
+        request_hash: requestHash,
+        side_effect: sideEffect,
+        operation_id: operationId,
+        request_id: request.request_id
+      };
+      if (!operationId || !approvalId || typeof this.approvalVerifier !== "function") {
+        await this.idempotencyStore.finish(ledgerKey, "failed");
+        throw new ToolInvocationError("APPROVAL_REQUIRED", "a valid approval bound to this exact operation is required", 403);
+      }
+      let approved = false;
+      try { approved = await this.approvalVerifier(approvalId, claims); }
+      catch {
+        await this.idempotencyStore.finish(ledgerKey, "failed");
+        throw new ToolInvocationError("APPROVAL_VERIFICATION_FAILED", "approval service is unavailable", 503);
+      }
+      if (!approved) {
+        await this.idempotencyStore.finish(ledgerKey, "failed");
+        throw new ToolInvocationError("APPROVAL_REQUIRED", "approval does not match this exact operation", 403);
+      }
     }
 
     try { await this.emitAudit(event("started")); }
