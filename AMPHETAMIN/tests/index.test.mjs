@@ -311,6 +311,7 @@ test("tool arguments cannot override tenant, project, actor, or scopes", async (
   }), access);
   const payload = await response.json();
   assert.equal(called, false);
-  assert.equal(payload.error?.code, -32602);
-  assert.equal(payload.result?.isError, undefined);
+  assert.equal(payload.error, undefined);
+  assert.equal(payload.result?.isError, true);
+  assert.match(payload.result.content[0].text, /INVALID_ARGUMENTS/);
 });
