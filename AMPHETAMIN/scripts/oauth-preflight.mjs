@@ -86,6 +86,8 @@ export function validateOAuthDiscovery({
     grant_types_supported: Array.isArray(metadata.grant_types_supported) ? metadata.grant_types_supported : [],
     response_types_supported: Array.isArray(metadata.response_types_supported) ? metadata.response_types_supported : [],
     refresh_token_grant_supported: Array.isArray(metadata.grant_types_supported) && metadata.grant_types_supported.includes("refresh_token"),
+    refresh_token_capable: scopes.includes("offline_access") ||
+      (Array.isArray(metadata.grant_types_supported) && metadata.grant_types_supported.includes("refresh_token")),
     pkce_s256: true,
     dcr: true,
     scopes_supported: scopes,
