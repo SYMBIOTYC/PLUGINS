@@ -2,6 +2,7 @@ import { D1AuditSink, D1IdempotencyStore } from "../runtime/d1-adapters.mjs";
 import { ToolRuntime } from "../runtime/tool-runtime.mjs";
 import { SkillRuntime } from "../runtime/skill-runtime.mjs";
 import { TOOL_REGISTRY, SKILL_REGISTRY, SKILL_DEFINITIONS } from "../runtime/registry.mjs";
+import { createGroupApprovalVerifier } from "./approval-verifier.mjs";
 
 export const MAX_REQUEST_BYTES = 64 * 1024;
 const MAX_GROUP_RESPONSE_BYTES = 8 * 1024;
@@ -234,7 +235,8 @@ async function executeSkill(env, principal, requestId, skillId, input) {
     },
     {
       idempotencyStore: new D1IdempotencyStore(env.RUNTIME_DB, "tool"),
-      auditSink: (event) => audit.append(event)
+      auditSink: (event) => audit.append(event),
+      approvalVerifier: createGroupApprovalVerifier(env, principal)
     }
   );
   const skillRuntime = new SkillRuntime(
