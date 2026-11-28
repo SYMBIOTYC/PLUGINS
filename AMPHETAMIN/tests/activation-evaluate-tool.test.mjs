@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { handleRequest } from "../src/index.mjs";
+import { callWithTestAccess } from "./access-fixture.mjs";
 import { FakeD1 } from "./fake-d1.mjs";
 
 const identity = { access: { aud: "test-access-audience", getIdentity: async () => ({ email: "owner@example.invalid", id: "access-owner-1" }) } };
@@ -33,7 +34,7 @@ const decodePrincipal = request => JSON.parse(
 );
 
 test("MCP advertises policy evaluation with the exact bounded telemetry contract", async () => {
-  const response = await handleRequest(rpc("tools/list"), envFor(async () => Response.json({})), identity);
+  const response = await callWithTestAccess(handleRequest, rpc("tools/list"), envFor(async () => Response.json({})), identity);
   const payload = await response.json();
   const tool = payload.result.tools.find(item => item.name === "compute_activation_evaluate");
   assert.ok(tool);
@@ -63,7 +64,7 @@ test("policy evaluation uses GROUP POST binding and a service principal with onl
     });
   });
 
-  const payload = await (await handleRequest(rpc("tools/call", {
+  const payload = await (await callWithTestAccess(handleRequest, rpc("tools/call", {
     name: "compute_activation_evaluate",
     arguments: telemetry
   }), env, identity)).json();
@@ -87,7 +88,7 @@ test("policy evaluation uses GROUP POST binding and a service principal with onl
 test("policy evaluation fails closed when the trusted GROUP Service Binding is missing", async () => {
   const env = envFor(async () => { throw new Error("must not be called"); });
   delete env.GROUP;
-  const payload = await (await handleRequest(rpc("tools/call", {
+  const payload = await (await callWithTestAccess(handleRequest, rpc("tools/call", {
     name: "compute_activation_evaluate",
     arguments: telemetry
   }), env, identity)).json();
@@ -98,7 +99,7 @@ test("policy evaluation rejects incomplete telemetry before contacting GROUP", a
   let called = false;
   const env = envFor(async () => { called = true; return Response.json({}); });
   const { quality_score, ...incomplete } = telemetry;
-  const payload = await (await handleRequest(rpc("tools/call", {
+  const payload = await (await callWithTestAccess(handleRequest, rpc("tools/call", {
     name: "compute_activation_evaluate",
     arguments: incomplete
   }), env, identity)).json();
