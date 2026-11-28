@@ -187,8 +187,8 @@ if (invokedPath && pathToFileURL(invokedPath).href === import.meta.url) {
   try {
     const report = await runOAuthPreflight({ endpoint });
     process.stdout.write(JSON.stringify(report, null, 2) + "\n");
-    if (!report.refresh_token_scope_advertised) {
-      process.stderr.write("WARNING: offline_access is not advertised; token refresh may require reauthorization.\n");
+    if (!report.refresh_token_capable) {
+      process.stderr.write("WARNING: neither offline_access nor refresh_token grant is advertised; token refresh may require reauthorization.\n");
     }
   } catch (error) {
     process.stderr.write(`OAuth preflight failed: ${error.message}\n`);
