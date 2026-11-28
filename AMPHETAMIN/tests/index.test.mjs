@@ -315,3 +315,35 @@ test("tool arguments cannot override tenant, project, actor, or scopes", async (
   assert.equal(payload.result?.isError, true);
   assert.match(payload.result.content[0].text, /INVALID_ARGUMENTS/);
 });
+
+
+test("invalid Access identity email cannot produce a GROUP principal", async () => {
+  let called = false;
+  const ctx = { access: { getIdentity: async () => ({ email: "not-an-email" }) } };
+  const response = await handleRequest(rpc("tools/call", {
+    name: "compute_capabilities",
+    arguments: {}
+  }), computeEnv(async () => {
+    called = true;
+    throw new Error("GROUP must not be called without a valid Access identity");
+  }), ctx);
+  const payload = await response.json();
+  assert.equal(called, false);
+  assert.equal(payload.result.isError, true);
+  assert.match(payload.result.content[0].text, /TRUSTED_PRINCIPAL_UNAVAILABLE/);
+});
+
+test("missing tenant or project mapping fails closed before GROUP is called", async () => {
+  let called = false;
+  const response = await handleRequest(rpc("tools/call", {
+    name: "compute_capabilities",
+    arguments: {}
+  }), computeEnv(async () => {
+    called = true;
+    throw new Error("GROUP must not be called without tenant/project mapping");
+  }, { COMPUTE_PROJECT_ID: "" }), access);
+  const payload = await response.json();
+  assert.equal(called, false);
+  assert.equal(payload.result.isError, true);
+  assert.match(payload.result.content[0].text, /TRUSTED_PRINCIPAL_UNAVAILABLE/);
+});
