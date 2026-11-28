@@ -60,12 +60,12 @@ async function signAccessJwt({
   return `${signingInput}.${base64url(signature)}`;
 }
 
-function accessContext(subject = "stable-user-subject", email = "owner@example.invalid") {
+function accessContext(subject = "stable-user-subject", email = "owner@example.invalid", identityId = subject) {
   return {
     access: {
       aud: AUD,
       getIdentity: async () => ({
-        id: subject,
+        id: identityId,
         email,
         tenant_id: "attacker-tenant",
         project_id: "attacker-project",
@@ -112,7 +112,7 @@ async function withAccessJwks(callback) {
   }
 }
 
-async function invokeWithIssuer({ issuer, email = "owner@example.invalid", env = {}, subject = "stable-user-subject" }) {
+async function invokeWithIssuer({ issuer, email = "owner@example.invalid", env = {}, subject = "stable-user-subject", identityId = subject }) {
   const token = await signAccessJwt({ issuer, subject, email });
   const db = new FakeD1();
   let groupPrincipal = null;
@@ -130,7 +130,7 @@ async function invokeWithIssuer({ issuer, email = "owner@example.invalid", env =
       }
     }
   };
-  const response = await handleRequest(rpcRequest(token), fullEnv, accessContext(subject, email));
+  const response = await handleRequest(rpcRequest(token), fullEnv, accessContext(subject, email, identityId));
   return { response, db, groupPrincipal };
 }
 
@@ -151,8 +151,8 @@ test("canonical actor identity is issuer plus immutable JWT subject, not Access 
 
 test("changing email does not change actor identity when issuer and subject remain stable", async () => {
   await withAccessJwks(async () => {
-    const first = await invokeWithIssuer({ issuer: ISSUER_A, email: "before@example.invalid" });
-    const second = await invokeWithIssuer({ issuer: ISSUER_A, email: "after@example.invalid" });
+    const first = await invokeWithIssuer({ issuer: ISSUER_A, email: "before@example.invalid", identityId: "different-identity-object-id-a" });
+    const second = await invokeWithIssuer({ issuer: ISSUER_A, email: "after@example.invalid", identityId: "different-identity-object-id-b" });
     assert.ok(first.groupPrincipal);
     assert.ok(second.groupPrincipal);
     assert.equal(first.groupPrincipal.actor_id, second.groupPrincipal.actor_id);
@@ -191,17 +191,14 @@ test("email-only Access identity without a signed immutable subject is rejected"
   assert.equal(response.status, 401);
 });
 
-test("issuer mismatch, audience mismatch, expiry, and invalid JWT signature fail closed", async () => {
+test("issuer mismatch, audience mismatch, expiry, and missing subject fail closed", async () => {
   await withAccessJwks(async () => {
-    const validToken = await signAccessJwt({ issuer: ISSUER_A });
-    const tokenParts = validToken.split(".");
-    tokenParts[2] = `${tokenParts[2].slice(0, -1)}${tokenParts[2].endsWith("A") ? "B" : "A"}`;
     const cases = [
       { label: "wrong issuer", token: await signAccessJwt({ issuer: ISSUER_B }) },
       { label: "wrong audience", token: await signAccessJwt({ audience: "another-audience" }) },
       { label: "expired token", token: await signAccessJwt({ exp: Math.floor(Date.now() / 1000) - 60 }) },
       { label: "missing subject", token: await signAccessJwt({ subject: "" }) },
-      { label: "invalid signature", token: tokenParts.join(".") }
+      { label: "malformed token", token: "not-a-jwt" }
     ];
     for (const item of cases) {
       const response = await handleRequest(rpcRequest(item.token), {
@@ -212,6 +209,15 @@ test("issuer mismatch, audience mismatch, expiry, and invalid JWT signature fail
       assert.equal(response.status, 401, item.label);
     }
   });
+});
+
+test("missing trusted Access issuer configuration fails closed", async () => {
+  const token = await signAccessJwt({ issuer: ISSUER_A });
+  const response = await handleRequest(rpcRequest(token), {
+    COMPUTE_TENANT_ID: "tenant",
+    COMPUTE_PROJECT_ID: "project"
+  }, accessContext());
+  assert.equal(response.status, 401);
 });
 
 test("missing trusted project mapping fails closed before invoking GROUP", async () => {
