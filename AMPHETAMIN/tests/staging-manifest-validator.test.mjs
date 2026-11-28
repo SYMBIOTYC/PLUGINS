@@ -21,7 +21,7 @@ test("accepts a manifest migration inventory when every pinned blob matches", as
     await writeFile(join(root, "migrations", "0001_example.sql"), source);
     const manifest = { resources: { d1: { expected_migration_blobs: [
       { path: "migrations/0001_example.sql", git_blob_sha: computeGitBlobSha(source) }
-    ] } } };
+    ], expected_migrations: ["0001_example.sql"] } } };
     const result = await verifyMigrationInventory(manifest, root);
     assert.equal(result.ok, true);
     assert.deepEqual(result.errors, []);
@@ -37,7 +37,7 @@ test("blocks a manifest when a pinned migration blob differs", async () => {
     await writeFile(join(root, "migrations", "0001_example.sql"), "SELECT 1;\n");
     const manifest = { resources: { d1: { expected_migration_blobs: [
       { path: "migrations/0001_example.sql", git_blob_sha: "0".repeat(40) }
-    ] } } };
+    ], expected_migrations: ["0001_example.sql"] } } };
     const result = await verifyMigrationInventory(manifest, root);
     assert.equal(result.ok, false);
     assert.match(result.errors.join(" "), /blob SHA mismatch/);
@@ -52,7 +52,7 @@ test("blocks missing migration files and unsafe paths", async () => {
     const manifest = { resources: { d1: { expected_migration_blobs: [
       { path: "../outside.sql", git_blob_sha: "0".repeat(40) },
       { path: "migrations/0002_missing.sql", git_blob_sha: "0".repeat(40) }
-    ] } } };
+    ], expected_migrations: ["0002_missing.sql"] } } };
     const result = await verifyMigrationInventory(manifest, root);
     assert.equal(result.ok, false);
     assert.match(result.errors.join(" "), /unsafe migration path/);
