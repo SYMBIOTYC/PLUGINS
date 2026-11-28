@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import worker, { handleRequest, MAX_REQUEST_BYTES } from "../src/index.mjs";
 import { FakeD1 } from "./fake-d1.mjs";
 
-const access = { access: { getIdentity: async () => ({ email: "owner@example.invalid", id: "access-subject-test" }) } };
+const access = { access: { aud: "test-access-audience", getIdentity: async () => ({ email: "owner@example.invalid", id: "access-subject-test" }) } };
 const baseEnv = (overrides = {}) => ({ COMPUTE_TENANT_ID: "symbiotyc", COMPUTE_PROJECT_ID: "compute", RUNTIME_DB: new FakeD1(), ...overrides });
 function rpc(method, params = {}, id = 1) {
   return new Request("https://amphetamin.example/mcp", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id, method, params }) });
@@ -133,4 +133,15 @@ test("applies Origin validation to the health route as well", async () => {
   });
   const response = await handleRequest(request, baseEnv(), access);
   assert.equal(response.status, 403);
+});
+
+
+test("rejects Access identity without a stable subject id", async () => {
+  const context = { access: { aud: "test-access-audience", getIdentity: async () => ({ email: "owner@example.invalid" }) } };
+  assert.equal((await handleRequest(rpc("tools/list"), baseEnv(), context)).status, 401);
+});
+
+test("rejects Access context without an audience", async () => {
+  const context = { access: { getIdentity: async () => ({ email: "owner@example.invalid", id: "access-subject-test" }) } };
+  assert.equal((await handleRequest(rpc("tools/list"), baseEnv(), context)).status, 401);
 });
