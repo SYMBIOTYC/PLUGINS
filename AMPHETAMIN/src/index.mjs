@@ -33,11 +33,22 @@ function hasRequestId(message) {
 }
 
 async function getAccessIdentity(ctx) {
-  if (!ctx?.access || typeof ctx.access.getIdentity !== "function") return null;
+  if (
+    !ctx?.access ||
+    typeof ctx.access.aud !== "string" ||
+    !ctx.access.aud.trim() ||
+    typeof ctx.access.getIdentity !== "function"
+  ) return null;
   try {
     const identity = await ctx.access.getIdentity();
-    return identity && typeof identity.email === "string" && identity.email.length > 0
-      ? identity
+    return (
+      identity &&
+      typeof identity.id === "string" &&
+      identity.id.trim().length > 0 &&
+      typeof identity.email === "string" &&
+      identity.email.trim().length > 0
+    )
+      ? { ...identity, id: identity.id.trim(), aud: ctx.access.aud.trim() }
       : null;
   } catch {
     return null;
@@ -57,9 +68,7 @@ async function derivePrincipal(identity, env) {
     error.code = "PROJECT_MAPPING_UNAVAILABLE";
     throw error;
   }
-  const stableSubject = typeof identity.id === "string" && identity.id
-    ? identity.id
-    : identity.email.trim().toLowerCase();
+  const stableSubject = `${identity.aud}\u0000${identity.id}`;
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(stableSubject));
   const actorHash = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
   return {
