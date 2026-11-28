@@ -111,6 +111,18 @@ test("manifest ingress declarations enforce no public GROUP path and no unapprov
   }
 });
 
+test("manifest validator rejects secret values and malformed secret references", () => {
+  const unsafeManifests = [
+    { ...safeManifest, secret_references: [{ name: "API_TOKEN", source: "approved-secret-store", value: "do-not-store-this" }] },
+    { ...safeManifest, secret_references: [{ name: "API_TOKEN", source: "approved-secret-store", value: undefined }] },
+    { ...safeManifest, secret_references: "API_TOKEN" }
+  ];
+  for (const manifest of unsafeManifests) {
+    const result = validateManifestAgainstConfigs(manifest, safeAmp, safeGroup);
+    assert.equal(result.ok, false, JSON.stringify(manifest));
+  }
+});
+
 test("migration inventory must match every expected migration exactly once", async () => {
   const root = await mkdtemp(join(tmpdir(), "group-migrations-"));
   try {
