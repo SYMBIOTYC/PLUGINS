@@ -36,12 +36,12 @@ export async function verifyMigrationInventory(manifest, groupRoot) {
   for (const entry of entries) {
     const path = entry?.path;
     if (typeof path !== "string" || !path.startsWith("migrations/") ||
-        isAbsolute(path) || path.split(/[\\\\/]/).includes("..")) {
+        isAbsolute(path) || path.split(/[\\/]/).includes("..")) {
       errors.push(`unsafe migration path: ${String(path)}`);
       continue;
     }
     const name = path.slice("migrations/".length);
-    if (!name || name.includes("/") || name.includes("\\")) {
+    if (!name || name.includes("/") || name.includes("\")) {
       errors.push(`unsafe migration path: ${path}`);
       continue;
     }
@@ -77,7 +77,7 @@ export async function verifyMigrationInventory(manifest, groupRoot) {
   for (const entry of entries) {
     const path = entry?.path;
     if (typeof path !== "string" || !path.startsWith("migrations/") ||
-        isAbsolute(path) || path.split(/[\\\\/]/).includes("..")) continue;
+        isAbsolute(path) || path.split(/[\\/]/).includes("..")) continue;
     const absolute = resolve(root, path);
     const rel = relative(root, absolute);
     if (rel.startsWith(`..${sep}`) || rel === ".." || isAbsolute(rel)) {
