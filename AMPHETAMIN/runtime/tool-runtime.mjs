@@ -170,7 +170,7 @@ export class ToolRuntime {
         operation_id: operationId,
         request_id: request.request_id
       };
-      if (!invocation.operation_id || !approvalId || typeof this.approvalVerifier !== "function") {
+      if (!operationId || !approvalId || typeof this.approvalVerifier !== "function") {
         await this.idempotencyStore.finish(ledgerKey, "failed");
         throw new ToolInvocationError("APPROVAL_REQUIRED", "a valid approval bound to this exact operation is required", 403);
       }
