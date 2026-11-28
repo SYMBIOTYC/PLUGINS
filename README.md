@@ -11,6 +11,10 @@ Shared contracts and runtime core for SYMBIOTYC plugin, Tool and Skill invocatio
 - [Skill Runtime v1](docs/skill-runtime-v1.md)
 - [Skill Run Request JSON Schema](contracts/skill-run-request-v1.schema.json)
 
+## AMPHETAMIN host status
+
+The [`AMPHETAMIN/`](AMPHETAMIN/) directory is currently a placeholder containing only a status Readme; it is not an MCP server or host. The runtime modules below are in-process cores and require a separately implemented authenticated host. See the [AMPHETAMIN source audit and integration gates](docs/amphetamin-host-source-audit.md).
+
 ## Runtime core
 
 - [In-process typed Tool invocation runtime](runtime/tool_runtime.py)
