@@ -46,9 +46,9 @@ export function validateOAuthDiscovery({
     throw new Error("Protected Resource Metadata must list authorization_servers");
   }
 
-  const expected = requireHttpsUrl(expectedResource, "expected resource");
-  const resource = requireHttpsUrl(resourceMetadata.resource, "resource");
-  if (resource.href !== expected.href) {
+  requireHttpsUrl(expectedResource, "expected resource");
+  requireHttpsUrl(resourceMetadata.resource, "resource");
+  if (resourceMetadata.resource !== expectedResource) {
     throw new Error("Protected Resource Metadata resource does not match the MCP origin");
   }
 
@@ -56,13 +56,10 @@ export function validateOAuthDiscovery({
   if (!metadata || typeof metadata !== "object") {
     throw new Error("Authorization Server Metadata must be a JSON object");
   }
-  const issuer = requireHttpsUrl(metadata.issuer, "issuer");
+  requireHttpsUrl(metadata.issuer, "issuer");
   const advertisedIssuers = resourceMetadata.authorization_servers;
   if (!advertisedIssuers.includes(metadata.issuer)) {
     throw new Error("Authorization Server Metadata issuer is not listed in authorization_servers");
-  }
-  if (issuer.href !== metadata.issuer) {
-    throw new Error("Authorization Server Metadata issuer must be canonical");
   }
 
   for (const field of ["authorization_endpoint", "token_endpoint", "registration_endpoint"]) {
