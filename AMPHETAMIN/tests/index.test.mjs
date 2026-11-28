@@ -59,7 +59,7 @@ test("fails closed when the tenant mapping is missing", async () => {
 test("fails closed when the GROUP binding is absent", async () => {
   const payload = await (await handleRequest(rpc("tools/call", { name: "group.health", arguments: {} }), baseEnv(), access)).json();
   assert.equal(payload.result.isError, true);
-  assert.match(payload.result.content[0].text, /RUNTIME_EXECUTION_FAILED/);
+  assert.match(payload.result.content[0].text, /SKILL_OUTCOME_UNKNOWN/);
 });
 test("does not execute unknown tools", async () => {
   const payload = await (await handleRequest(rpc("tools/call", { name: "group.jobs.create", arguments: {} }), baseEnv(), access)).json();
