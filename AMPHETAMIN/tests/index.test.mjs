@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import worker, { handleRequest, MAX_REQUEST_BYTES } from "../src/index.mjs";
+import { callWithTestAccess } from "./access-fixture.mjs";
 import { FakeD1 } from "./fake-d1.mjs";
 
 const access = { access: { aud: "test-access-audience", getIdentity: async () => ({ email: "owner@example.invalid", id: "access-subject-test" }) } };
