@@ -125,7 +125,8 @@
             "expected_migrations",
             "require_production_database_id_mismatch",
             "require_production_database_name_mismatch",
-            "require_data_isolation"
+            "require_data_isolation",
+            "expected_migration_blobs"
           ],
           "properties": {
             "name": {
@@ -165,6 +166,28 @@
             },
             "require_data_isolation": {
               "const": true
+            },
+            "expected_migration_blobs": {
+              "type": "array",
+              "minItems": 4,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "path",
+                  "git_blob_sha"
+                ],
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "pattern": "^migrations/000[1-4]_.*\\.sql$"
+                  },
+                  "git_blob_sha": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{40}$"
+                  }
+                }
+              }
             }
           }
         },
