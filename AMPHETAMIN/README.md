@@ -13,6 +13,7 @@ No job creation, cancellation, execution, shell, dynamic URL, or arbitrary tool 
 ## Security and deployment
 
 - A hostname-based Cloudflare Access application protects `symbiotyc-amphetamin-mcp.vladyslavchaplygin.workers.dev` with an exact allow policy for the linked account owner.
+- Cloudflare Managed OAuth is enabled on the Access application, with Dynamic Client Registration enabled. MCP clients authenticate through the standard Access-managed OAuth authorization-code flow; the Worker does not store or issue OAuth client secrets.
 - The `workers.dev` hostname is enabled only behind that Access application; Preview URLs are disabled.
 - GROUP is called only through the `GROUP` Service Binding. GROUP's own `workers.dev` and Preview URLs remain disabled.
 - Tenant, project, actor and scopes are not accepted from MCP tool arguments. A future compute tool requires a verified Access identity-to-membership mapping and the GROUP principal contract.
