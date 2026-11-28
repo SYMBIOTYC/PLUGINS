@@ -77,8 +77,8 @@ const manifest = {
   resources: {
     access: { policy_verified: false },
     workers: {
-      amphetamin: { name: "amp-staging" },
-      group: { name: "group-staging" }
+      amphetamin: { name: "amp-staging", ingress: { workers_dev: false, preview_urls: false } },
+      group: { name: "group-staging", ingress: { workers_dev: false, preview_urls: false, service_binding_only: true } }
     },
     d1: { name: "db-staging", database_id: null }
   },
@@ -86,11 +86,15 @@ const manifest = {
 };
 const amp = {
   name: "amp-staging",
+  workers_dev: false,
+  preview_urls: false,
   services: [{ binding: "GROUP", service: "group-staging" }],
   d1_databases: [{ binding: "RUNTIME_DB", database_name: "db-staging", database_id: "staging-id" }]
 };
 const group = {
   name: "group-staging",
+  workers_dev: false,
+  preview_urls: false,
   d1_databases: [{ binding: "DB", database_name: "db-staging", database_id: "staging-id" }]
 };
 
