@@ -27,6 +27,12 @@ export const TOOL_REGISTRY = {
             },
             additionalProperties: false
           }
+        },
+        activation_state: {
+          status: "verified",
+          side_effect: "read",
+          required_scopes: ["compute:activation:read"],
+          input_schema: { type: "object", properties: {}, additionalProperties: false }
         }
       }
     }
@@ -52,6 +58,12 @@ export const SKILL_REGISTRY = {
       requires_tools: ["symbiotyc.group"],
       requires_invocations: ["get_job"],
       invocation_sets: [{ tool: "symbiotyc.group", invocations: ["get_job"] }]
+    },
+    "skill.symbiotyc.group-activation-state": {
+      status: "verified",
+      requires_tools: ["symbiotyc.group"],
+      requires_invocations: ["activation_state"],
+      invocation_sets: [{ tool: "symbiotyc.group", invocations: ["activation_state"] }]
     }
   }
 };
@@ -116,6 +128,20 @@ export const SKILL_DEFINITIONS = {
     output_mapping: {
       status_code: "steps.get_job.result.status_code",
       body: "steps.get_job.result.body"
+    }
+  },
+  "skill.symbiotyc.group-activation-state": {
+    input_schema: { type: "object", properties: {}, additionalProperties: false },
+    output_schema: readOutputSchema,
+    steps: [{
+      id: "activation_state",
+      tool_id: "symbiotyc.group",
+      invocation_id: "activation_state",
+      input_mapping: {}
+    }],
+    output_mapping: {
+      status_code: "steps.activation_state.result.status_code",
+      body: "steps.activation_state.result.body"
     }
   }
 };
