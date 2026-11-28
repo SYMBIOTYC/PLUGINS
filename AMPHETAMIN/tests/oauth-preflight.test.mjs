@@ -24,7 +24,7 @@ test("rejects missing or non-Bearer discovery challenges", () => {
 test("accepts OAuth discovery with S256 and DCR", () => {
   const result = validateOAuthDiscovery({
     resourceMetadata: {
-      resource: "https://mcp.example",
+      resource: "https://mcp.example/mcp",
       authorization_servers: ["https://mcp.example"]
     },
     authorizationServerMetadata: {
@@ -36,7 +36,7 @@ test("accepts OAuth discovery with S256 and DCR", () => {
       code_challenge_methods_supported: ["S256"],
       scopes_supported: ["openid", "email", "offline_access"]
     },
-    expectedResource: "https://mcp.example"
+    expectedResource: "https://mcp.example/mcp"
   });
   assert.equal(result.pkce_s256, true);
   assert.equal(result.dcr, true);
@@ -45,20 +45,20 @@ test("accepts OAuth discovery with S256 and DCR", () => {
 
 test("rejects issuer mismatch, missing PKCE S256, and missing DCR endpoint", () => {
   assert.throws(() => validateOAuthDiscovery({
-    resourceMetadata: { resource: "https://mcp.example", authorization_servers: ["https://expected-issuer.example"] },
+    resourceMetadata: { resource: "https://mcp.example/mcp", authorization_servers: ["https://expected-issuer.example"] },
     authorizationServerMetadata: { issuer: "https://other.example", authorization_endpoint: "https://other.example/a", token_endpoint: "https://other.example/t", registration_endpoint: "https://other.example/r", token_endpoint_auth_methods_supported: ["none"], code_challenge_methods_supported: ["S256"] },
-    expectedResource: "https://mcp.example"
+    expectedResource: "https://mcp.example/mcp"
   }), /issuer/);
 
   assert.throws(() => validateOAuthDiscovery({
-    resourceMetadata: { resource: "https://mcp.example", authorization_servers: ["https://mcp.example"] },
+    resourceMetadata: { resource: "https://mcp.example/mcp", authorization_servers: ["https://mcp.example"] },
     authorizationServerMetadata: { issuer: "https://mcp.example", authorization_endpoint: "https://mcp.example/a", token_endpoint: "https://mcp.example/t", registration_endpoint: "https://mcp.example/r", token_endpoint_auth_methods_supported: ["none"], code_challenge_methods_supported: ["plain"] },
-    expectedResource: "https://mcp.example"
+    expectedResource: "https://mcp.example/mcp"
   }), /S256/);
 
   assert.throws(() => validateOAuthDiscovery({
-    resourceMetadata: { resource: "https://mcp.example", authorization_servers: ["https://mcp.example"] },
+    resourceMetadata: { resource: "https://mcp.example/mcp", authorization_servers: ["https://mcp.example"] },
     authorizationServerMetadata: { issuer: "https://mcp.example", authorization_endpoint: "https://mcp.example/a", token_endpoint: "https://mcp.example/t", token_endpoint_auth_methods_supported: ["none"], code_challenge_methods_supported: ["S256"] },
-    expectedResource: "https://mcp.example"
+    expectedResource: "https://mcp.example/mcp"
   }), /registration_endpoint/);
 });
