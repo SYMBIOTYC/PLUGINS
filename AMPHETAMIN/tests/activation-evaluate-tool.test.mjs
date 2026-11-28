@@ -70,7 +70,7 @@ test("policy evaluation uses GROUP POST binding and a service principal with onl
 
   assert.equal(payload.result.isError, false);
   assert.equal(capturedRequest.headers.get("x-symbiotyc-caller"), "amphetamin");
-  assert.match(capturedRequest.headers.get("content-type"), /application\\/json/);
+  assert.ok(capturedRequest.headers.get("content-type").includes("application/json"));
   assert.deepEqual(JSON.parse(await new Response(capturedRequest.body).text()), telemetry);
   const principal = decodePrincipal(capturedRequest);
   assert.equal(principal.kind, "service");
