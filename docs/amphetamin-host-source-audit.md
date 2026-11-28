@@ -153,3 +153,10 @@ TDD ordering: tests were committed before the implementation. However, the avail
 The implementation does not add `MCP-Protocol-Version` negotiation or claim support for the 2026-07-28 protocol. The deployed server remains pinned to legacy `2025-03-26`; the 2026-07-28 revision changes the protocol model substantially (stateless request metadata, no initialize handshake, and required mirrored headers). Changing protocol versions requires a separate compatibility design and client verification.
 
 No production Worker deployment or Access policy change was made.
+
+
+### CI result update — 2026-11-28
+
+The PR workflow has now executed successfully. GitHub Actions run [46125027544](https://github.com/SYMBIOTYC/PLUGINS/actions/runs/46125027544) completed with conclusion `success`; its `node --test tests/*.test.mjs` step reports **54 tests passed, 0 failed**. The existing AMPHETAMIN MCP host tests, AMPHETAMIN MCP edge tests, and Plugin contract CI also completed successfully on the PR merge commit.
+
+PR #24 is no longer draft and is mergeable. It remains open and unmerged; production deployment remains a separate gated operation.
