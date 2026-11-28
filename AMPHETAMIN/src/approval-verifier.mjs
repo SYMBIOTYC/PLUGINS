@@ -1,9 +1,10 @@
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const HASH_RE = /^[0-9a-f]{64}$/;
 const OPERATION_ACTIONS = Object.freeze({
-  "job.submit": { action: "job.submit", invocation_id: "submit_job" },
-  "job.cancel": { action: "job.cancel", invocation_id: "cancel_job" }
+  submit_job: "job.submit",
+  cancel_job: "job.cancel"
 });
+const OPERATION_ID_RE = /^[a-z][a-z0-9_.-]{1,127}$/;
 const MAX_RESPONSE_BYTES = 8 * 1024;
 
 function encodePrincipal(principal) {
@@ -66,11 +67,13 @@ export function createGroupApprovalVerifier(env, principal) {
     ) return false;
     if (typeof approvalId !== "string" || !UUID_RE.test(approvalId)) return false;
 
-    const operation = OPERATION_ACTIONS[claims?.operation_id];
+    const action = OPERATION_ACTIONS[claims?.invocation_id];
+    const validOperationId = claims?.invocation_id === "cancel_job"
+      ? claims?.operation_id === "job.cancel"
+      : typeof claims?.operation_id === "string" && OPERATION_ID_RE.test(claims.operation_id);
     if (
-      !operation ||
+      !action || !validOperationId ||
       claims?.tool_id !== "symbiotyc.group" ||
-      claims?.invocation_id !== operation.invocation_id ||
       claims?.side_effect !== "write" ||
       typeof claims?.request_hash !== "string" || !HASH_RE.test(claims.request_hash) ||
       typeof claims?.request_id !== "string" || !UUID_RE.test(claims.request_id)
@@ -88,7 +91,7 @@ export function createGroupApprovalVerifier(env, principal) {
           "x-correlation-id": claims.request_id
         },
         body: JSON.stringify({
-          action: operation.action,
+          action,
           operation_id: claims.operation_id,
           request_hash: claims.request_hash
         })
