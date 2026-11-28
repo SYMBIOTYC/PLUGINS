@@ -78,7 +78,25 @@
       ],
       "require_production_database_id_mismatch": true,
       "require_production_database_name_mismatch": true,
-      "require_data_isolation": true
+      "require_data_isolation": true,
+      "expected_migration_blobs": [
+        {
+          "path": "migrations/0001_compute_core.sql",
+          "git_blob_sha": "27ce7d91d81ffd26cf16012b7536d64b1bad6006"
+        },
+        {
+          "path": "migrations/0002_runtime_ledger.sql",
+          "git_blob_sha": "805f712000e2583fe789ab0268b88ae0e606a077"
+        },
+        {
+          "path": "migrations/0003_compute_approvals.sql",
+          "git_blob_sha": "913166ab0cc4ef1c200ff9bd50ee4965f51739ea"
+        },
+        {
+          "path": "migrations/0004_amphetamin_activation_state.sql",
+          "git_blob_sha": "a6274650e9e8bd7b2472e52739beb9a85b59f6c5"
+        }
+      ]
     },
     "access": {
       "application_name": null,
