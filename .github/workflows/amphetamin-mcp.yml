@@ -1,0 +1,25 @@
+name: AMPHETAMIN MCP host tests
+
+on:
+  push:
+    paths:
+      - "AMPHETAMIN/**"
+      - ".github/workflows/amphetamin-mcp.yml"
+  pull_request:
+    paths:
+      - "AMPHETAMIN/**"
+      - ".github/workflows/amphetamin-mcp.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  worker-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Run AMPHETAMIN Worker contract tests
+        run: node --test AMPHETAMIN/tests/*.test.mjs
