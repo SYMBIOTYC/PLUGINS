@@ -244,7 +244,7 @@ function encodePrincipal(principal) {
   const bytes = new TextEncoder().encode(JSON.stringify(principal));
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/\\+/g, "-").replace(/\\//g, "_").replace(/=+$/g, "");
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
 async function callGroup(env, principal, path, options = {}) {
@@ -322,7 +322,7 @@ function validateToolArguments(name, args) {
     }
     if (args.job_intent.protocol !== "symbiotyc.compute.v1" ||
         typeof args.job_intent.schema_version !== "string" ||
-        !/^1\\.[0-9]+$/.test(args.job_intent.schema_version) ||
+        !/^1\.[0-9]+$/.test(args.job_intent.schema_version) ||
         typeof args.job_intent.operation_id !== "string" ||
         !isObject(args.job_intent.input) ||
         !isObject(args.job_intent.constraints) ||
@@ -341,6 +341,9 @@ async function invokeTool(name, args, env, principal) {
   const invalid = validateToolArguments(name, args);
   if (invalid) return toolFailure("INVALID_ARGUMENTS", invalid);
   if (name === "group.health") {
+    if (!env?.GROUP || typeof env.GROUP.fetch !== "function") {
+      return toolFailure("GROUP_UNAVAILABLE", "GROUP service binding is unavailable");
+    }
     try {
       const response = await env.GROUP.fetch(new Request("https://group.internal/health", {
         method: "GET",
