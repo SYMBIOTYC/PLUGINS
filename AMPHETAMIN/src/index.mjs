@@ -3,6 +3,7 @@ import { ToolRuntime } from "../runtime/tool-runtime.mjs";
 import { SkillRuntime } from "../runtime/skill-runtime.mjs";
 import { TOOL_REGISTRY, SKILL_REGISTRY, SKILL_DEFINITIONS } from "../runtime/registry.mjs";
 import { createGroupApprovalVerifier } from "./approval-verifier.mjs";
+import { createRemoteJWKSet, jwtVerify, customFetch } from "jose";
 
 export const MAX_REQUEST_BYTES = 64 * 1024;
 const MAX_GROUP_RESPONSE_BYTES = 8 * 1024;
@@ -32,13 +33,88 @@ function hasRequestId(message) {
   return Object.prototype.hasOwnProperty.call(message, "id");
 }
 
-async function getAccessIdentity(ctx) {
-  if (!ctx?.access || typeof ctx.access.getIdentity !== "function") return null;
+function trustedAccessIssuer(value) {
+  if (typeof value !== "string" || !value || value !== value.trim()) return null;
   try {
-    const identity = await ctx.access.getIdentity();
-    return identity && typeof identity.email === "string" && identity.email.length > 0
-      ? identity
-      : null;
+    const url = new URL(value);
+    if (
+      url.protocol !== "https:" ||
+      url.origin !== value ||
+      url.pathname !== "/" ||
+      url.search ||
+      url.hash
+    ) return null;
+    return value;
+  } catch {
+    return null;
+  }
+}
+
+const ACCESS_JWKS_BY_ISSUER = new Map();
+const ACCESS_JWKS_BY_TEST_BINDING = new WeakMap();
+
+function getAccessJwks(issuer, env) {
+  const jwksUrl = new URL(`${issuer}/cdn-cgi/access/certs`);
+  const testBinding = env?.ACCESS_JWKS_TEST;
+  if (testBinding && typeof testBinding.fetch === "function") {
+    let byIssuer = ACCESS_JWKS_BY_TEST_BINDING.get(testBinding);
+    if (!byIssuer) {
+      byIssuer = new Map();
+      ACCESS_JWKS_BY_TEST_BINDING.set(testBinding, byIssuer);
+    }
+    let jwks = byIssuer.get(issuer);
+    if (!jwks) {
+      const testFetch = (input, init) => testBinding.fetch(new Request(input, init));
+      jwks = createRemoteJWKSet(jwksUrl, { [customFetch]: testFetch });
+      byIssuer.set(issuer, jwks);
+    }
+    return jwks;
+  }
+
+  let jwks = ACCESS_JWKS_BY_ISSUER.get(issuer);
+  if (!jwks) {
+    jwks = createRemoteJWKSet(jwksUrl);
+    ACCESS_JWKS_BY_ISSUER.set(issuer, jwks);
+  }
+  return jwks;
+}
+
+async function getAccessIdentity(request, ctx, env) {
+  const audience = ctx?.access?.aud;
+  const issuer = trustedAccessIssuer(env?.CLOUDFLARE_ACCESS_ISSUER);
+  if (
+    !ctx?.access ||
+    typeof audience !== "string" ||
+    !audience.trim() ||
+    !issuer
+  ) return null;
+
+  try {
+    // ctx.access confirms that Access authenticated this direct Worker request.
+    // WARP contexts may expose only aud, so verify the complete assertion against
+    // the configured team's rotating JWKS before trusting iss/sub as identity.
+    const assertion = request.headers.get("cf-access-jwt-assertion");
+    if (!assertion) return null;
+
+    const { payload } = await jwtVerify(assertion, getAccessJwks(issuer, env), {
+      issuer,
+      audience: audience.trim(),
+      algorithms: ["RS256"],
+      requiredClaims: ["exp", "iss", "aud", "sub"],
+      clockTolerance: 5
+    });
+
+    if (
+      typeof payload.sub !== "string" ||
+      !payload.sub.trim() ||
+      payload.type !== "app"
+    ) return null;
+
+    return {
+      issuer: payload.iss,
+      subject: payload.sub.trim(),
+      aud: audience.trim()
+    };
   } catch {
     return null;
   }
@@ -57,9 +133,7 @@ async function derivePrincipal(identity, env) {
     error.code = "PROJECT_MAPPING_UNAVAILABLE";
     throw error;
   }
-  const stableSubject = typeof identity.id === "string" && identity.id
-    ? identity.id
-    : identity.email.trim().toLowerCase();
+    const stableSubject = `${identity.issuer}\u0000${identity.subject}`;
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(stableSubject));
   const actorHash = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
   return {
@@ -68,6 +142,26 @@ async function derivePrincipal(identity, env) {
     project_id: projectId,
     actor_id: `access:${actorHash}`,
     scopes: ["compute:read", "compute:jobs:read"]
+  };
+}
+
+async function deriveActivationReadPrincipal(identity, env) {
+  const principal = await derivePrincipal(identity, env);
+  return {
+    ...principal,
+    kind: "service",
+    actor_id: "amphetamin:activation-state-reader",
+    scopes: ["compute:activation:read"]
+  };
+}
+
+async function deriveActivationEvaluatePrincipal(identity, env) {
+  const principal = await derivePrincipal(identity, env);
+  return {
+    ...principal,
+    kind: "service",
+    actor_id: "amphetamin:activation-policy-evaluator",
+    scopes: ["compute:activation:evaluate"]
   };
 }
 
@@ -129,6 +223,33 @@ function toolList() {
         },
         additionalProperties: false
       }
+    },
+    {
+      name: "compute_activation_state",
+      description: "Read the durable AMPHETAMIN activation, deployment streak, and burnout snapshot for the authenticated project. Read-only; cannot create deployment or recovery events.",
+      inputSchema: { type: "object", properties: {}, additionalProperties: false }
+    },
+    {
+      name: "compute_activation_evaluate",
+      description: "Evaluate a caller-supplied telemetry snapshot against the project's durable AMPHETAMIN activation and burnout state. Returns a policy decision only; it does not dispatch jobs or provision Workers.",
+      inputSchema: {
+            type: "object",
+            required: ["backlog", "ambiguous_tasks", "resource_pressure", "overload_score", "quality_score", "cooldown_latched", "recovery_score", "integrity_risk", "available_credits", "max_credits", "max_workers"],
+            properties: {
+              backlog: { type: "integer", minimum: 0, maximum: 4294967295 },
+              ambiguous_tasks: { type: "integer", minimum: 0, maximum: 4294967295 },
+              resource_pressure: { type: "integer", minimum: 0, maximum: 100 },
+              overload_score: { type: "integer", minimum: 0, maximum: 100 },
+              quality_score: { type: "integer", minimum: 0, maximum: 100 },
+              cooldown_latched: { type: "integer", minimum: 0, maximum: 1 },
+              recovery_score: { type: "integer", minimum: 0, maximum: 100 },
+              integrity_risk: { type: "integer", minimum: 0, maximum: 1 },
+              available_credits: { type: "integer", minimum: 0, maximum: 4294967295 },
+              max_credits: { type: "integer", minimum: 0, maximum: 4294967295 },
+              max_workers: { type: "integer", minimum: 0, maximum: 4294967295 }
+            },
+            additionalProperties: false
+          }
     }
   ];
 }
@@ -221,6 +342,31 @@ async function readGroupJson(env, principal, path) {
   return { status_code: response.status, body };
 }
 
+async function postGroupJson(env, principal, path, body) {
+  if (!env?.GROUP || typeof env.GROUP.fetch !== "function") {
+    throw new Error("GROUP service binding is unavailable");
+  }
+  const response = await env.GROUP.fetch(new Request(`https://group.internal${path}`, {
+    method: "POST",
+    headers: {
+      "accept": "application/json",
+      "content-type": "application/json",
+      "x-symbiotyc-caller": "amphetamin",
+      "x-symbiotyc-principal": encodeGroupPrincipal(principal)
+    },
+    body: JSON.stringify(body)
+  }));
+  const text = await readResponseLimited(response, MAX_GROUP_RESPONSE_BYTES);
+  let value;
+  try { value = JSON.parse(text); }
+  catch { throw new Error("GROUP returned an invalid JSON response"); }
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("GROUP returned an invalid response object");
+  }
+  if (response.status >= 500) throw new Error("GROUP policy evaluation failed");
+  return { status_code: response.status, body: value };
+}
+
 async function executeSkill(env, principal, requestId, skillId, input) {
   if (!env?.RUNTIME_DB || typeof env.RUNTIME_DB.prepare !== "function") {
     throw new Error("durable Tool/Skill Runtime database binding is unavailable");
@@ -231,7 +377,11 @@ async function executeSkill(env, principal, requestId, skillId, input) {
     {
       "symbiotyc.group:health": async () => readGroupHealth(env),
       "symbiotyc.group:capabilities": async () => readGroupJson(env, principal, "/v1/capabilities"),
-      "symbiotyc.group:get_job": async (toolInput) => readGroupJson(env, principal, `/v1/jobs/${toolInput.job_id}`)
+      "symbiotyc.group:get_job": async (toolInput) => readGroupJson(env, principal, `/v1/jobs/${toolInput.job_id}`),
+      "symbiotyc.group:activation_state": async () => readGroupJson(env, principal, "/v1/activation/state"),
+      "symbiotyc.group:activation_evaluate": async (toolInput) => postGroupJson(
+        env, principal, "/v1/activation/evaluate", toolInput
+      )
     },
     {
       idempotencyStore: new D1IdempotencyStore(env.RUNTIME_DB, "tool"),
@@ -309,7 +459,7 @@ export async function handleRequest(request, env, ctx) {
   if (url.pathname !== "/mcp" && url.pathname !== "/health") {
     return json({ ok: false, error: "not_found" }, 404);
   }
-  const identity = await getAccessIdentity(ctx);
+  const identity = await getAccessIdentity(request, ctx, env);
   if (!identity) {
     return json({ ok: false, error: "access_authentication_required" }, 401, {
       "www-authenticate": "Bearer"
@@ -379,12 +529,18 @@ export async function handleRequest(request, env, ctx) {
     const toolToSkill = {
       "group.health": "skill.symbiotyc.group-health",
       "compute_capabilities": "skill.symbiotyc.group-capabilities",
-      "compute_get_job": "skill.symbiotyc.group-get-job"
+      "compute_get_job": "skill.symbiotyc.group-get-job",
+      "compute_activation_state": "skill.symbiotyc.group-activation-state",
+      "compute_activation_evaluate": "skill.symbiotyc.group-activation-evaluate"
     };
     const skillId = toolToSkill[params.name];
     if (!skillId) return rpcError(id, -32602, "Unknown tool");
     try {
-      const principal = await derivePrincipal(identity, env);
+      const principal = skillId === "skill.symbiotyc.group-activation-state"
+        ? await deriveActivationReadPrincipal(identity, env)
+        : skillId === "skill.symbiotyc.group-activation-evaluate"
+          ? await deriveActivationEvaluatePrincipal(identity, env)
+          : await derivePrincipal(identity, env);
       const input = params.arguments;
       const result = await executeSkill(env, principal, id, skillId, input);
       const isError = typeof result?.status_code === "number" && result.status_code >= 400;

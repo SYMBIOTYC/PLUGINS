@@ -1,0 +1,125 @@
+name: AMPHETAMIN local multi-Worker WASM integration
+
+on:
+  push:
+    branches:
+      - "test/amphetamin-local-multi-worker-e2e"
+      - "feat/amphetamin-runtime-json-schema-gate"
+    paths:
+      - "AMPHETAMIN/tests/local-multi-worker.integration.mjs"
+      - "AMPHETAMIN/tests/fixtures/**"
+      - ".github/workflows/amphetamin-local-multi-worker.yml"
+  pull_request:
+    paths:
+      - "AMPHETAMIN/**"
+      - "AMPHETAMIN/tests/fixtures/**"
+      - ".github/workflows/amphetamin-local-multi-worker.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  local-multi-worker:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout AMPHETAMIN caller
+        uses: actions/checkout@v4
+
+      - name: Checkout pinned GROUP WASM implementation
+        uses: actions/checkout@v4
+        with:
+          repository: SYMBIOTYC/GROUP
+          ref: 5e56635c340a1e5dff871fe8e148c00ce960328a
+          path: GROUP
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install AMPHETAMIN dependencies
+        run: npm install --prefix AMPHETAMIN --ignore-scripts --no-audit --no-fund
+
+      - name: Install WebAssembly compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang lld
+
+      - name: Compile the exact GROUP C policy to WebAssembly
+        working-directory: GROUP
+        run: |
+          mkdir -p build
+          clang --target=wasm32 -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -nostdlib -Isrc src/amphetamin_policy.c src/amphetamin_wasm.c \
+            -Wl,--no-entry -Wl,--export-memory \
+            -Wl,--export=amphetamin_input_ptr \
+            -Wl,--export=amphetamin_output_ptr \
+            -Wl,--export=amphetamin_eval \
+            -Wl,--initial-memory=131072 -Wl,--max-memory=131072 \
+            -o build/amphetamin_policy.wasm
+
+      - name: Run AMPHETAMIN unit and contract tests
+        run: node --test AMPHETAMIN/tests/*.test.mjs
+
+      - name: Prepare isolated local D1 databases
+        run: |
+          # Both configs use deliberately fake database IDs. Never use remote bindings.
+          sed \
+            -e 's/633d7c14-d335-426c-be7e-2168a43171bc/00000000-0000-4000-8000-000000000002/' \
+            -e 's/symbiotyc-group-compute-state/group-local-integration-test/' \
+            GROUP/wrangler.jsonc > GROUP/wrangler.integration.jsonc
+          cp -R GROUP/migrations AMPHETAMIN/tests/fixtures/migrations
+          npx --yes wrangler@latest d1 migrations apply group-local-integration-test \
+            --local --config GROUP/wrangler.integration.jsonc
+          npx --yes wrangler@latest d1 migrations apply amphetamin-local-runtime-test \
+            --local --config AMPHETAMIN/tests/fixtures/wrangler.integration.toml
+
+      - name: Exercise AMPHETAMIN through a real local Service Binding and GROUP WASM
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Cloudflare's local Service Binding discovery connects separate
+          # Wrangler dev sessions by the target Worker's configured name.
+          npx --yes wrangler@latest dev --local --ip 127.0.0.1 --port 8788 --inspector-port 9230 \
+            --config GROUP/wrangler.integration.jsonc > /tmp/group-wrangler.log 2>&1 &
+          GROUP_PID=$!
+
+          npx --yes wrangler@latest dev --local --ip 127.0.0.1 --port 8787 --inspector-port 9231 \
+            --config AMPHETAMIN/tests/fixtures/wrangler.integration.toml \
+            > /tmp/amphetamin-wrangler.log 2>&1 &
+          AMPHETAMIN_PID=$!
+
+          cleanup() {
+            kill "$AMPHETAMIN_PID" "$GROUP_PID" 2>/dev/null || true
+            wait "$AMPHETAMIN_PID" 2>/dev/null || true
+            wait "$GROUP_PID" 2>/dev/null || true
+            echo "::group::GROUP Wrangler log"
+            cat /tmp/group-wrangler.log
+            echo "::endgroup::"
+            echo "::group::AMPHETAMIN Wrangler log"
+            cat /tmp/amphetamin-wrangler.log
+            echo "::endgroup::"
+          }
+          trap cleanup EXIT
+
+          # Wait for both local processes before sending the MCP request.
+          for port in 8788 8787; do
+            ready=0
+            for attempt in $(seq 1 120); do
+              if (echo > "/dev/tcp/127.0.0.1/$port") >/dev/null 2>&1; then
+                ready=1
+                break
+              fi
+              sleep 0.25
+            done
+            if [ "$ready" -ne 1 ]; then
+              echo "Wrangler Worker on port $port did not become ready"
+              exit 1
+            fi
+          done
+
+          AMPHETAMIN_LOCAL_URL=http://127.0.0.1:8787 \
+            node AMPHETAMIN/tests/local-multi-worker.integration.mjs

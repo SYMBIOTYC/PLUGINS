@@ -1,30 +1,31 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import worker, { handleRequest, MAX_REQUEST_BYTES } from "../src/index.mjs";
+import { callWithTestAccess } from "./access-fixture.mjs";
 import { FakeD1 } from "./fake-d1.mjs";
 
-const access = { access: { getIdentity: async () => ({ email: "owner@example.invalid", id: "access-subject-test" }) } };
+const access = { access: { aud: "test-access-audience", getIdentity: async () => ({ email: "owner@example.invalid", id: "access-subject-test" }) } };
 const baseEnv = (overrides = {}) => ({ COMPUTE_TENANT_ID: "symbiotyc", COMPUTE_PROJECT_ID: "compute", RUNTIME_DB: new FakeD1(), ...overrides });
 function rpc(method, params = {}, id = 1) {
   return new Request("https://amphetamin.example/mcp", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id, method, params }) });
 }
 
 test("rejects requests without Cloudflare Access identity", async () => {
-  assert.equal((await handleRequest(rpc("tools/list"), baseEnv(), {})).status, 401);
+  assert.equal((await callWithTestAccess(handleRequest, rpc("tools/list"), baseEnv(), {})).status, 401);
 });
 test("rejects Access context without a verified identity", async () => {
-  assert.equal((await handleRequest(rpc("tools/list"), baseEnv(), { access: { getIdentity: async () => null } })).status, 401);
+  assert.equal((await callWithTestAccess(handleRequest, rpc("tools/list"), baseEnv(), { access: { getIdentity: async () => null } })).status, 401);
 });
 test("initializes a stateless MCP session", async () => {
-  const response = await handleRequest(rpc("initialize", { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "test-client", version: "1.0.0" } }), baseEnv(), access);
+  const response = await callWithTestAccess(handleRequest, rpc("initialize", { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "test-client", version: "1.0.0" } }), baseEnv(), access);
   const payload = await response.json();
   assert.equal(response.status, 200);
   assert.equal(payload.result.protocolVersion, "2025-03-26");
   assert.equal(payload.result.serverInfo.name, "symbiotyc-amphetamin");
 });
 test("advertises only verified read-only tools", async () => {
-  const payload = await (await handleRequest(rpc("tools/list"), baseEnv(), access)).json();
-  assert.deepEqual(payload.result.tools.map(tool => tool.name), ["group.health", "compute_capabilities", "compute_get_job"]);
+  const payload = await (await callWithTestAccess(handleRequest, rpc("tools/list"), baseEnv(), access)).json();
+  assert.deepEqual(payload.result.tools.map(tool => tool.name), ["group.health", "compute_capabilities", "compute_get_job", "compute_activation_state", "compute_activation_evaluate"]);
   assert.equal(payload.result.tools.every(tool => tool.inputSchema.additionalProperties === false), true);
 });
 test("executes group.health through Skill Runtime, Tool Runtime, and private GROUP binding", async () => {
@@ -35,7 +36,7 @@ test("executes group.health through Skill Runtime, Tool Runtime, and private GRO
     assert.equal(new URL(request.url).pathname, "/health");
     return Response.json({ status: "ok", service: "symbiotyc-group-control-plane", protocol: "symbiotyc.compute.v1", dispatch_enabled: false });
   }}};
-  const payload = await (await handleRequest(rpc("tools/call", { name: "group.health", arguments: {} }), env, access)).json();
+  const payload = await (await callWithTestAccess(handleRequest, rpc("tools/call", { name: "group.health", arguments: {} }), env, access)).json();
   assert.equal(called, true);
   assert.equal(payload.result.isError, false);
   assert.match(payload.result.content[0].text, /dispatch_enabled/);
@@ -46,32 +47,32 @@ test("executes group.health through Skill Runtime, Tool Runtime, and private GRO
 });
 test("fails closed when durable runtime database binding is absent", async () => {
   let called = false;
-  const payload = await (await handleRequest(rpc("tools/call", { name: "group.health", arguments: {} }), { COMPUTE_TENANT_ID: "symbiotyc", COMPUTE_PROJECT_ID: "compute", GROUP: { fetch: async () => { called = true; throw new Error("must not run"); } } }, access)).json();
+  const payload = await (await callWithTestAccess(handleRequest, rpc("tools/call", { name: "group.health", arguments: {} }), { COMPUTE_TENANT_ID: "symbiotyc", COMPUTE_PROJECT_ID: "compute", GROUP: { fetch: async () => { called = true; throw new Error("must not run"); } } }, access)).json();
   assert.equal(called, false);
   assert.equal(payload.result.isError, true);
   assert.match(payload.result.content[0].text, /RUNTIME_EXECUTION_FAILED/);
 });
 test("fails closed when the tenant mapping is missing", async () => {
-  const payload = await (await handleRequest(rpc("tools/call", { name: "group.health", arguments: {} }), { RUNTIME_DB: new FakeD1(), GROUP: { fetch: async () => { throw new Error("must not run"); } } }, access)).json();
+  const payload = await (await callWithTestAccess(handleRequest, rpc("tools/call", { name: "group.health", arguments: {} }), { RUNTIME_DB: new FakeD1(), GROUP: { fetch: async () => { throw new Error("must not run"); } } }, access)).json();
   assert.equal(payload.result.isError, true);
   assert.match(payload.result.content[0].text, /TENANT_MAPPING_UNAVAILABLE/);
 });
 test("fails closed when the GROUP binding is absent", async () => {
-  const payload = await (await handleRequest(rpc("tools/call", { name: "group.health", arguments: {} }), baseEnv(), access)).json();
+  const payload = await (await callWithTestAccess(handleRequest, rpc("tools/call", { name: "group.health", arguments: {} }), baseEnv(), access)).json();
   assert.equal(payload.result.isError, true);
   assert.match(payload.result.content[0].text, /OUTCOME_UNKNOWN/);
 });
 test("does not execute unknown tools", async () => {
-  const payload = await (await handleRequest(rpc("tools/call", { name: "group.jobs.create", arguments: {} }), baseEnv(), access)).json();
+  const payload = await (await callWithTestAccess(handleRequest, rpc("tools/call", { name: "group.jobs.create", arguments: {} }), baseEnv(), access)).json();
   assert.equal(payload.error.code, -32602);
 });
 test("rejects oversized request bodies before parsing", async () => {
   const request = new Request("https://amphetamin.example/mcp", { method: "POST", headers: { "content-type": "application/json", "content-length": String(MAX_REQUEST_BYTES + 1) }, body: "{}" });
-  assert.equal((await handleRequest(request, baseEnv(), access)).status, 413);
+  assert.equal((await callWithTestAccess(handleRequest, request, baseEnv(), access)).status, 413);
 });
 test("acknowledges MCP notifications without a response body", async () => {
   const request = new Request("https://amphetamin.example/mcp", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) });
-  const response = await handleRequest(request, baseEnv(), access);
+  const response = await callWithTestAccess(handleRequest, request, baseEnv(), access);
   assert.equal(response.status, 202);
   assert.equal(await response.text(), "");
 });
@@ -84,7 +85,7 @@ test("rejects browser-originated MCP requests when no origin allowlist is config
     headers: { "content-type": "application/json", origin: "https://chatgpt.com" },
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} })
   });
-  const response = await handleRequest(request, baseEnv(), access);
+  const response = await callWithTestAccess(handleRequest, request, baseEnv(), access);
   assert.equal(response.status, 403);
 });
 
@@ -94,7 +95,7 @@ test("accepts an exact HTTPS origin from the configured allowlist", async () => 
     headers: { "content-type": "application/json", origin: "https://chatgpt.com" },
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} })
   });
-  const response = await handleRequest(request, baseEnv({
+  const response = await callWithTestAccess(handleRequest, request, baseEnv({
     MCP_ALLOWED_ORIGINS: "https://chatgpt.com,https://chat.openai.com"
   }), access);
   assert.equal(response.status, 200);
@@ -106,7 +107,7 @@ test("rejects lookalike and non-allowlisted origins", async () => {
     headers: { "content-type": "application/json", origin: "https://chatgpt.com.attacker.invalid" },
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} })
   });
-  const response = await handleRequest(request, baseEnv({
+  const response = await callWithTestAccess(handleRequest, request, baseEnv({
     MCP_ALLOWED_ORIGINS: "https://chatgpt.com"
   }), access);
   assert.equal(response.status, 403);
@@ -119,7 +120,7 @@ test("rejects malformed and non-HTTPS Origin values", async () => {
       headers: { "content-type": "application/json", origin },
       body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} })
     });
-    const response = await handleRequest(request, baseEnv({
+    const response = await callWithTestAccess(handleRequest, request, baseEnv({
       MCP_ALLOWED_ORIGINS: "https://chatgpt.com"
     }), access);
     assert.equal(response.status, 403, origin);
@@ -131,6 +132,17 @@ test("applies Origin validation to the health route as well", async () => {
     method: "GET",
     headers: { origin: "https://evil.invalid" }
   });
-  const response = await handleRequest(request, baseEnv(), access);
+  const response = await callWithTestAccess(handleRequest, request, baseEnv(), access);
   assert.equal(response.status, 403);
+});
+
+
+test("rejects Access identity without a stable subject id", async () => {
+  const context = { access: { aud: "test-access-audience", getIdentity: async () => ({ email: "owner@example.invalid" }) } };
+  assert.equal((await callWithTestAccess(handleRequest, rpc("tools/list"), baseEnv(), context)).status, 401);
+});
+
+test("rejects Access context without an audience", async () => {
+  const context = { access: { getIdentity: async () => ({ email: "owner@example.invalid", id: "access-subject-test" }) } };
+  assert.equal((await callWithTestAccess(handleRequest, rpc("tools/list"), baseEnv(), context)).status, 401);
 });
