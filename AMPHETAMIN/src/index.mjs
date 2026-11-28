@@ -129,6 +129,32 @@ function toolList() {
         },
         additionalProperties: false
       }
+    },
+    {
+      name: "compute_activation_evaluate",
+      description: "Evaluate the AMPHETAMIN activation policy using validated telemetry through the private GROUP Service Binding. Returns a policy decision only; it does not provision workers or dispatch jobs.",
+      inputSchema: {
+        type: "object",
+        required: [
+          "backlog", "ambiguous_tasks", "resource_pressure", "overload_score",
+          "quality_score", "cooldown_latched", "recovery_score", "integrity_risk",
+          "available_credits", "max_credits", "max_workers"
+        ],
+        properties: {
+          backlog: { type: "integer", minimum: 0, maximum: 4294967295 },
+          ambiguous_tasks: { type: "integer", minimum: 0, maximum: 4294967295 },
+          resource_pressure: { type: "integer", minimum: 0, maximum: 100 },
+          overload_score: { type: "integer", minimum: 0, maximum: 100 },
+          quality_score: { type: "integer", minimum: 0, maximum: 100 },
+          cooldown_latched: { type: "integer", minimum: 0, maximum: 1 },
+          recovery_score: { type: "integer", minimum: 0, maximum: 100 },
+          integrity_risk: { type: "integer", minimum: 0, maximum: 1 },
+          available_credits: { type: "integer", minimum: 0, maximum: 4294967295 },
+          max_credits: { type: "integer", minimum: 0, maximum: 4294967295 },
+          max_workers: { type: "integer", minimum: 0, maximum: 4294967295 }
+        },
+        additionalProperties: false
+      }
     }
   ];
 }
@@ -221,6 +247,30 @@ async function readGroupJson(env, principal, path) {
   return { status_code: response.status, body };
 }
 
+async function evaluateGroupActivation(env, principal, input) {
+  if (!env?.GROUP || typeof env.GROUP.fetch !== "function") {
+    throw new Error("GROUP service binding is unavailable");
+  }
+  const response = await env.GROUP.fetch(new Request("https://group.internal/v1/activation/evaluate", {
+    method: "POST",
+    headers: {
+      "accept": "application/json",
+      "content-type": "application/json",
+      "x-symbiotyc-caller": "amphetamin",
+      "x-symbiotyc-principal": encodeGroupPrincipal(principal)
+    },
+    body: JSON.stringify(input)
+  }));
+  const text = await readResponseLimited(response, MAX_GROUP_RESPONSE_BYTES);
+  let body;
+  try { body = JSON.parse(text); }
+  catch { throw new Error("GROUP returned an invalid policy response"); }
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    throw new Error("GROUP returned an invalid policy response object");
+  }
+  return { status_code: response.status, body };
+}
+
 async function executeSkill(env, principal, requestId, skillId, input) {
   if (!env?.RUNTIME_DB || typeof env.RUNTIME_DB.prepare !== "function") {
     throw new Error("durable Tool/Skill Runtime database binding is unavailable");
@@ -231,7 +281,8 @@ async function executeSkill(env, principal, requestId, skillId, input) {
     {
       "symbiotyc.group:health": async () => readGroupHealth(env),
       "symbiotyc.group:capabilities": async () => readGroupJson(env, principal, "/v1/capabilities"),
-      "symbiotyc.group:get_job": async (toolInput) => readGroupJson(env, principal, `/v1/jobs/${toolInput.job_id}`)
+      "symbiotyc.group:get_job": async (toolInput) => readGroupJson(env, principal, `/v1/jobs/${toolInput.job_id}`),
+      "symbiotyc.group:activation_evaluate": async (toolInput) => evaluateGroupActivation(env, principal, toolInput)
     },
     {
       idempotencyStore: new D1IdempotencyStore(env.RUNTIME_DB, "tool"),
@@ -379,14 +430,18 @@ export async function handleRequest(request, env, ctx) {
     const toolToSkill = {
       "group.health": "skill.symbiotyc.group-health",
       "compute_capabilities": "skill.symbiotyc.group-capabilities",
-      "compute_get_job": "skill.symbiotyc.group-get-job"
+      "compute_get_job": "skill.symbiotyc.group-get-job",
+      "compute_activation_evaluate": "skill.symbiotyc.group-activation-evaluate"
     };
     const skillId = toolToSkill[params.name];
     if (!skillId) return rpcError(id, -32602, "Unknown tool");
     try {
       const principal = await derivePrincipal(identity, env);
+      const invocationPrincipal = params.name === "compute_activation_evaluate"
+        ? { ...principal, kind: "service", scopes: ["compute:activation:evaluate"] }
+        : principal;
       const input = params.arguments;
-      const result = await executeSkill(env, principal, id, skillId, input);
+      const result = await executeSkill(env, invocationPrincipal, id, skillId, input);
       const isError = typeof result?.status_code === "number" && result.status_code >= 400;
       return json({ jsonrpc: "2.0", id, result: toolTextResult(result, isError) });
     } catch (error) {
