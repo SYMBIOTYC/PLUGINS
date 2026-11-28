@@ -177,3 +177,39 @@ Fresh read-only production checks:
 - No authenticated MCP request or OAuth exchange has been observed.
 
 Next gate: capture the Access 401 challenge and both discovery documents with an RFC 8707 + PKCE S256 client, validate issuer/resource/S256/DCR/token-auth metadata, complete authorization, then run `initialize → tools/list → group.health` and correlate Worker telemetry plus D1 rows. No production changes were made.
+
+
+## Live OAuth discovery result and refresh-grant configuration — 2026-11-28
+
+The read-only GitHub Actions preflight now successfully retrieves the actual Cloudflare Access challenge and both discovery documents from production.
+
+Observed metadata:
+- Unauthenticated MCP POST returns HTTP 401.
+- `WWW-Authenticate` points to `https://symbiotyc-amphetamin-mcp.vladyslavchaplygin.workers.dev/.well-known/cloudflare-access-protected-resource/mcp`.
+- Protected Resource Metadata identifies the canonical resource as the full endpoint `https://symbiotyc-amphetamin-mcp.vladyslavchaplygin.workers.dev/mcp`.
+- Authorization server issuer: `https://falling-mountain-3235.cloudflareaccess.com`.
+- Authorization endpoint: `/cdn-cgi/access/oauth/authorization`.
+- Token endpoint: `/cdn-cgi/access/oauth/token`.
+- DCR endpoint: `/cdn-cgi/access/oauth/registration`.
+- Token endpoint auth methods: `client_secret_basic`, `client_secret_post`, and `none`.
+- `code_challenge_methods_supported` includes `S256`.
+- `grant_types_supported` includes `authorization_code` and `refresh_token`; `response_types_supported` includes `code`.
+- `scopes_supported` is absent/empty and `offline_access` is not separately advertised. The explicit `refresh_token` grant is the provider's advertised refresh capability; the probe treats it as equivalent refresh support, but does not claim a refresh token was actually issued.
+- `authorization_response_iss_parameter_supported=false`. ChatGPT therefore uses the callback-ID-specific redirect path, which is covered by the existing `https://chatgpt.com/connector/oauth/*` allowlist entry.
+
+Cloudflare Access OAuth grant configuration was updated through a read-before-write/full-object PUT/read-after-write sequence:
+- `oauth_configuration.grant.access_token_lifetime=15m`
+- `oauth_configuration.grant.session_duration=168h` (7 days)
+- Existing outer Access application `session_duration=12h` remains unchanged.
+- OAuth enabled, DCR enabled, both ChatGPT redirect allowlist entries, and the owner-only policy ID remain unchanged.
+
+This configuration is based on Cloudflare's documented agent recommendation of a short access token and longer refresh grant. No DCR registration, authorization-code exchange, token issuance, or refresh request has yet been performed. RFC 8707 resource parameter echo is not proven until the authorization/token flow is exercised.
+
+GitHub Actions on the latest PR head:
+- OAuth discovery preflight run [46125624597](https://github.com/SYMBIOTYC/PLUGINS/actions/runs/46125624597): success.
+- AMPHETAMIN tests run [46125624632](https://github.com/SYMBIOTYC/PLUGINS/actions/runs/46125624632): success.
+- MCP host tests run [46125624624](https://github.com/SYMBIOTYC/PLUGINS/actions/runs/46125624624): success.
+- MCP edge tests run [46125624667](https://github.com/SYMBIOTYC/PLUGINS/actions/runs/46125624667): success.
+- Plugin contract CI run [46125624729](https://github.com/SYMBIOTYC/PLUGINS/actions/runs/46125624729): success.
+
+The preflight is read-only and does not register a client, exchange tokens, or invoke tools. Production Worker version and D1 data remain unchanged. The live authenticated MCP round-trip remains unverified.
