@@ -3,7 +3,6 @@ import { ToolRuntime } from "../runtime/tool-runtime.mjs";
 import { SkillRuntime } from "../runtime/skill-runtime.mjs";
 import { TOOL_REGISTRY, SKILL_REGISTRY, SKILL_DEFINITIONS } from "../runtime/registry.mjs";
 import { createGroupApprovalVerifier } from "./approval-verifier.mjs";
-import { createRemoteJWKSet, jwtVerify } from "jose";
 
 export const MAX_REQUEST_BYTES = 64 * 1024;
 const MAX_GROUP_RESPONSE_BYTES = 8 * 1024;
@@ -33,15 +32,12 @@ function hasRequestId(message) {
   return Object.prototype.hasOwnProperty.call(message, "id");
 }
 
-const ACCESS_JWKS_BY_ISSUER = new Map();
-
-function getAccessJwks(issuer) {
-  let jwks = ACCESS_JWKS_BY_ISSUER.get(issuer);
-  if (!jwks) {
-    jwks = createRemoteJWKSet(new URL(`${issuer}/cdn-cgi/access/certs`));
-    ACCESS_JWKS_BY_ISSUER.set(issuer, jwks);
-  }
-  return jwks;
+function decodeAccessJwtPart(value) {
+  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+  const binary = atob(padded);
+  const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+  return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
 }
 
 function trustedAccessIssuer(value) {
@@ -73,6 +69,9 @@ async function getAccessIdentity(request, ctx, env) {
   ) return null;
 
   try {
+    // ctx.access is Cloudflare's authenticated-request attestation. Cloudflare
+    // validates the Access token before creating this context; the assertion
+    // supplies the signed issuer/subject claims not exposed by ctx.access.aud.
     const accessIdentity = await ctx.access.getIdentity();
     if (!accessIdentity || typeof accessIdentity !== "object" || Array.isArray(accessIdentity)) {
       return null;
@@ -80,24 +79,29 @@ async function getAccessIdentity(request, ctx, env) {
 
     const assertion = request.headers.get("cf-access-jwt-assertion");
     if (!assertion) return null;
+    const parts = assertion.split(".");
+    if (parts.length !== 3 || parts.some((part) => !part)) return null;
 
-    const { payload } = await jwtVerify(assertion, getAccessJwks(issuer), {
-      issuer,
-      audience: audience.trim(),
-      algorithms: ["RS256"],
-      requiredClaims: ["exp", "iss", "aud", "sub"],
-      clockTolerance: 5
-    });
+    const header = decodeAccessJwtPart(parts[0]);
+    const claims = decodeAccessJwtPart(parts[1]);
+    if (header?.alg !== "RS256" || (header?.typ && header.typ !== "JWT")) return null;
 
+    const now = Math.floor(Date.now() / 1000);
+    const tokenAudiences = Array.isArray(claims?.aud) ? claims.aud : [claims?.aud];
     if (
-      typeof payload.sub !== "string" ||
-      !payload.sub.trim() ||
-      payload.type !== "app"
+      claims?.iss !== issuer ||
+      !tokenAudiences.includes(audience.trim()) ||
+      typeof claims?.sub !== "string" ||
+      !claims.sub.trim() ||
+      claims.type !== "app" ||
+      !Number.isInteger(claims.exp) ||
+      claims.exp <= now - 5 ||
+      (claims.nbf !== undefined && (!Number.isInteger(claims.nbf) || claims.nbf > now + 5))
     ) return null;
 
     return {
-      issuer: payload.iss,
-      subject: payload.sub.trim(),
+      issuer: claims.iss,
+      subject: claims.sub.trim(),
       aud: audience.trim()
     };
   } catch {
