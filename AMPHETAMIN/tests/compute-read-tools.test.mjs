@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { handleRequest } from "../src/index.mjs";
+import { callWithTestAccess } from "./access-fixture.mjs";
 import { FakeD1 } from "./fake-d1.mjs";
 
 const identity = { access: { aud: "test-access-audience", getIdentity: async () => ({ email: "owner@example.invalid", id: "access-owner-1" }) } };
@@ -22,7 +23,7 @@ const decodePrincipal = request => {
 };
 
 test("MCP lists only verified health and read-only compute tools", async () => {
-  const response = await handleRequest(rpc("tools/list"), envFor(async () => Response.json({})), identity);
+  const response = await callWithTestAccess(handleRequest, rpc("tools/list"), envFor(async () => Response.json({})), identity);
   const payload = await response.json();
   assert.deepEqual(payload.result.tools.map(tool => tool.name), [
     "group.health",
@@ -52,7 +53,7 @@ test("compute_capabilities uses server-derived owner/project identity over the p
     });
   });
   env.RUNTIME_DB = db;
-  const response = await handleRequest(rpc("tools/call", { name: "compute_capabilities", arguments: {} }), env, identity);
+  const response = await callWithTestAccess(handleRequest, rpc("tools/call", { name: "compute_capabilities", arguments: {} }), env, identity);
   const payload = await response.json();
   const principal = decodePrincipal(captured);
   assert.equal(payload.result.isError, false);
@@ -85,7 +86,7 @@ test("compute_get_job reads only the caller's server-derived tenant/project", as
       correlation_id: "corr-123"
     });
   });
-  const payload = await (await handleRequest(rpc("tools/call", {
+  const payload = await (await callWithTestAccess(handleRequest, rpc("tools/call", {
     name: "compute_get_job", arguments: { job_id: JOB_ID }
   }), env, identity)).json();
   const principal = decodePrincipal(captured);
@@ -101,7 +102,7 @@ test("compute_get_job reports a tenant-scoped 404 as a normal tool error without
   const db = new FakeD1();
   const env = envFor(async () => Response.json({ error: { code: "JOB_NOT_FOUND", message: "The requested Job was not found." } }, { status: 404 }));
   env.RUNTIME_DB = db;
-  const payload = await (await handleRequest(rpc("tools/call", {
+  const payload = await (await callWithTestAccess(handleRequest, rpc("tools/call", {
     name: "compute_get_job", arguments: { job_id: JOB_ID }
   }), env, identity)).json();
   assert.equal(payload.result.isError, true);
@@ -114,7 +115,7 @@ test("compute_get_job reports a tenant-scoped 404 as a normal tool error without
 test("compute_get_job rejects malformed identifiers before calling GROUP", async () => {
   let called = false;
   const env = envFor(async () => { called = true; return Response.json({}); });
-  const payload = await (await handleRequest(rpc("tools/call", {
+  const payload = await (await callWithTestAccess(handleRequest, rpc("tools/call", {
     name: "compute_get_job", arguments: { job_id: "not-a-uuid" }
   }), env, identity)).json();
   assert.equal(called, false);
@@ -125,7 +126,7 @@ test("compute_get_job rejects malformed identifiers before calling GROUP", async
 test("compute tool arguments cannot override tenant or project", async () => {
   let called = false;
   const env = envFor(async () => { called = true; return Response.json({}); });
-  const payload = await (await handleRequest(rpc("tools/call", {
+  const payload = await (await callWithTestAccess(handleRequest, rpc("tools/call", {
     name: "compute_get_job", arguments: { job_id: JOB_ID, tenant_id: "other", project_id: "other" }
   }), env, identity)).json();
   assert.equal(called, false);
@@ -137,7 +138,7 @@ test("compute reads fail closed when the trusted project mapping is missing", as
   let called = false;
   const env = envFor(async () => { called = true; return Response.json({}); });
   delete env.COMPUTE_PROJECT_ID;
-  const payload = await (await handleRequest(rpc("tools/call", {
+  const payload = await (await callWithTestAccess(handleRequest, rpc("tools/call", {
     name: "compute_capabilities", arguments: {}
   }), env, identity)).json();
   assert.equal(called, false);
@@ -146,7 +147,7 @@ test("compute reads fail closed when the trusted project mapping is missing", as
 });
 
 test("state-changing compute tools remain unadvertised until approval verification exists", async () => {
-  const response = await handleRequest(rpc("tools/list"), envFor(async () => Response.json({})), identity);
+  const response = await callWithTestAccess(handleRequest, rpc("tools/list"), envFor(async () => Response.json({})), identity);
   const payload = await response.json();
   const names = payload.result.tools.map(tool => tool.name);
   assert.equal(names.includes("compute_submit_job"), false);
