@@ -153,6 +153,7 @@ export class ToolRuntime {
     try { claim = await this.idempotencyStore.claim(ledgerKey, requestHash); }
     catch (error) {
       if (error instanceof ToolInvocationError) throw error;
+      if (error?.code) throw new ToolInvocationError(error.code, error.message || "idempotency conflict", error.statusCode || 409);
       throw new ToolInvocationError("IDEMPOTENCY_UNAVAILABLE", "idempotency store unavailable; invocation is blocked", 503);
     }
     if (claim.state === "replay") {
