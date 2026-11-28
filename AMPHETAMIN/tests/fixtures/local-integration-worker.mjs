@@ -1,11 +1,16 @@
 import { handleRequest } from "../../src/index.mjs";
-import { attachTestAccessAssertion, TEST_ACCESS_ISSUER, TEST_ACCESS_AUDIENCE } from "../access-fixture.mjs";
+import {
+  attachTestAccessAssertion,
+  TEST_ACCESS_ISSUER,
+  TEST_ACCESS_AUDIENCE,
+  TEST_ACCESS_JWKS_BINDING
+} from "../access-fixture.mjs";
 
 // This entrypoint exists only for local integration tests. It supplies a
-// deterministic Access context and matching test assertion; production Access
-// policy and the production Worker entrypoint are not modified.
+// deterministic Access context and a genuinely signed assertion backed by the
+// test-only JWKS binding; production Access and Worker configuration are untouched.
 export default {
-  fetch(request, env, ctx) {
+  async fetch(request, env, ctx) {
     const access = {
       aud: TEST_ACCESS_AUDIENCE,
       async getIdentity() {
@@ -16,12 +21,17 @@ export default {
       }
     };
     return handleRequest(
-      attachTestAccessAssertion(request, {
+      await attachTestAccessAssertion(request, {
         issuer: TEST_ACCESS_ISSUER,
         audience: TEST_ACCESS_AUDIENCE,
-        subject: "local-integration-owner"
+        subject: "local-integration-owner",
+        email: "local-integration@example.invalid"
       }),
-      { ...env, CLOUDFLARE_ACCESS_ISSUER: TEST_ACCESS_ISSUER },
+      {
+        ...env,
+        CLOUDFLARE_ACCESS_ISSUER: TEST_ACCESS_ISSUER,
+        ACCESS_JWKS_TEST: TEST_ACCESS_JWKS_BINDING
+      },
       { ...ctx, access }
     );
   }
