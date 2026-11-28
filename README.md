@@ -13,7 +13,7 @@ Shared contracts and runtime core for SYMBIOTYC plugin, Tool and Skill invocatio
 
 ## AMPHETAMIN host status
 
-The [`AMPHETAMIN/`](AMPHETAMIN/) directory is currently a placeholder containing only a blank Readme; it is not an MCP server or host. The runtime modules below are in-process cores and require a separately implemented authenticated host. See the [AMPHETAMIN source audit and integration gates](docs/amphetamin-host-source-audit.md).
+The [`AMPHETAMIN/`](AMPHETAMIN/) directory is currently a placeholder containing only a status Readme; it is not an MCP server or host. The runtime modules below are in-process cores and require a separately implemented authenticated host. See the [AMPHETAMIN source audit and integration gates](docs/amphetamin-host-source-audit.md).
 
 ## Runtime core
 
