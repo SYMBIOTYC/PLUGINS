@@ -63,13 +63,26 @@ test("blocks missing migration files and unsafe paths", async () => {
 });
 
 const manifest = {
+  metadata: { provisioning_authorized: false, deploy_authorized: false },
+  approval: {
+    production_comparison_complete: false,
+    proposed_names_confirmed_unique: false,
+    identity_model_approved: false,
+    explicit_provisioning_approval: false,
+    access_policy_verified: false,
+    d1_migration_approval: false,
+    edge_smoke_test_approval: false,
+    deploy_allowed: false
+  },
   resources: {
+    access: { policy_verified: false },
     workers: {
       amphetamin: { name: "amp-staging" },
       group: { name: "group-staging" }
     },
     d1: { name: "db-staging", database_id: null }
-  }
+  },
+  identity: { model: "UNDECIDED" }
 };
 const amp = {
   name: "amp-staging",
