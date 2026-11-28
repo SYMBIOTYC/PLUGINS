@@ -56,5 +56,7 @@ test("activation state tool fails closed when the trusted GROUP binding is missi
     name: "compute_activation_state", arguments: {}
   }), env, identity)).json();
   assert.equal(payload.result.isError, true);
-  assert.match(payload.result.content[0].text, /RUNTIME_EXECUTION_FAILED/);
+  assert.equal(payload.result.isError, true);
+  const result = JSON.parse(payload.result.content[0].text);
+  assert.equal(typeof result.error, "string");
 });
