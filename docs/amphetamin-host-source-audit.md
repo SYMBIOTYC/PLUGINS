@@ -112,3 +112,25 @@ The AMPHETAMIN TypeScript host now contains `AMPHETAMIN/src/approval-verifier.mj
 - Tool Runtime now includes trusted `operation_id` and `request_id` in verifier claims. Approval consumption occurs after a new idempotency claim and after replay resolution, preventing a successful replay from consuming the one-time approval again.
 
 This source change implements only the approval-consumption half of the workflow. It does not implement approval creation, expose submit/cancel tools, enable dispatch, or change the live Worker. The GROUP production Worker is still on the pre-approval version, so the consume endpoint is not yet live. PLUGINS PR #21 was merged at `8b69c756d6a5e757126b6f0f326ec4f7dde8372d`; the AMPHETAMIN host tests, edge tests, and Plugin contract CI all passed on the final PR head. Authenticated production integration remains outstanding.
+
+## MCP transport and Access identity conformance review — 2026-11-28
+
+The current source of record is `AMPHETAMIN/src/index.mjs` (GitHub blob SHA `cb8f2ca2d32b7d5ddfef5ff20aeb1208968983ae`). The package test command is `node --test tests/*.test.mjs`; the current request-handler tests are in `AMPHETAMIN/tests/index.test.mjs`.
+
+The existing test suite covers missing Access identity, stateless initialize, the three read-only tools, GROUP health invocation, missing D1/tenant/GROUP bindings, unknown tools, request-size limits, notifications, and Worker export. It does not currently test Origin-header validation or MCP protocol-version header negotiation/validation.
+
+Source-level findings:
+- The handler uses `ctx.access.getIdentity()` and fails closed when no Access identity is available.
+- The current source pins `PROTOCOL_VERSION = "2025-03-26"`; it does not validate the requested initialize version or the `MCP-Protocol-Version` header.
+- No Origin-header validation is present in the handler.
+- `GET /mcp` returns 405. This is compatible with the optional GET/SSE behavior in the 2025-11-25 transport revision.
+- The current source is a legacy 2025-03-26 Streamable HTTP profile. Do not describe it as supporting the 2026-07-28 transport revision without a dedicated implementation and tests.
+
+Release distinction: the GitHub source includes `createGroupApprovalVerifier` in `AMPHETAMIN/src/index.mjs`, while the active Cloudflare deployment does not include that source-only approval consumer. This is intentional and matches the README release gate: the verifier is merged in source but not deployed; the production Worker continues to expose only the three read-only tools.
+
+No source code, tests, Worker deployment, Access policy, or D1 data was changed as part of this review. Any protocol hardening must follow TDD: add failing request-handler tests first, implement the minimal behavior, run `node --test tests/*.test.mjs`, and only then prepare a reviewed release. The exact protocol revision expected by the ChatGPT client must be confirmed before changing the advertised protocol version.
+
+References:
+- [MCP 2025-11-25 Streamable HTTP](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/docs/specification/2025-11-25/basic/transports.mdx)
+- [MCP 2026-07-28 Streamable HTTP](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/docs/specification/2026-07-28/basic/transports/streamable-http.mdx)
+- [Cloudflare Managed OAuth](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/managed-oauth/)
