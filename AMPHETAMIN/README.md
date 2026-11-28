@@ -27,9 +27,12 @@ This is a parity adapter implemented in TypeScript for the Cloudflare Worker. Th
 - `compute_capabilities` — enabled, read-only.
 - `compute_get_job` — enabled, read-only.
 - `compute_activation_state` — added on PR #25 as a read-only view of GROUP's durable activation/deployment-streak/burnout snapshot. It requires the GROUP PR #12 activation-state API and is not part of the live deployed tool surface until both changes are released.
+- `compute_activation_evaluate` — added on PR #26 as a policy-only evaluation call to GROUP `POST /v1/activation/evaluate` through the existing private Service Binding. It uses a server-derived service principal scoped only to `compute:activation:evaluate`; callers provide bounded telemetry, while GROUP supplies durable activation/burnout state and cryptographic randomness. The result does not dispatch jobs or provision Workers. It depends on GROUP PR #14 and is not live until both PRs are merged and released.
 - `compute_submit_job` and `compute_cancel_job` — withheld. Approval creation and write Tool/Skill definitions are not yet implemented; the live GROUP approval routes are unavailable.
 
 This staged reduction is intentional: no operation may bypass the runtime boundary merely to preserve a previous MCP tool listing.
+
+The policy evaluation tool is a telemetry what-if/evaluation surface, not an autonomous scaling trigger. Its caller-supplied telemetry must come from a trusted upstream controller before any future automated use; the current MCP interface does not schedule, dispatch, or provision work.
 
 ## Identity and trust
 
