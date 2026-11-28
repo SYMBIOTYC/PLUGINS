@@ -2,7 +2,28 @@ import { createHash } from "node:crypto";
 import { readFile, realpath } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import { isAbsolute, relative, resolve, sep } from "node:path";
+import Ajv2020 from "ajv/dist/2020.js";
 import { parseWranglerJsonc, parseWranglerToml } from "./staging-preflight.mjs";
+
+/** Validate the complete staging manifest against its checked-in Draft 2020-12 schema. */
+export function validateManifestSchema(manifest, schema) {
+  try {
+    const ajv = new Ajv2020({ allErrors: true, strict: true });
+    const validate = ajv.compile(schema);
+    const valid = validate(manifest);
+    return {
+      ok: valid === true,
+      errors: valid ? [] : (validate.errors ?? []).map((error) =>
+        `${error.instancePath || "/"} ${error.message} (${error.keyword})`
+      )
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      errors: [`Manifest JSON Schema validation failed: ${error.message}`]
+    };
+  }
+}
 
 export function computeGitBlobSha(content) {
   const bytes = Buffer.isBuffer(content) ? content : Buffer.from(content, "utf8");
@@ -208,24 +229,29 @@ export function validateManifestAgainstConfigs(manifest, stagingAmphetamin, stag
 
 export async function runStagingManifestValidation({
   manifestPath = "config/staging-provisioning-manifest.template.json",
+  schemaPath = "config/staging-provisioning-manifest.schema.json",
   ampConfigPath = "wrangler.staging.toml",
   groupConfigPath = "../GROUP/wrangler.staging.jsonc",
   groupRoot = "../GROUP"
 } = {}) {
-  const [manifestSource, ampSource, groupSource] = await Promise.all([
+  const [manifestSource, schemaSource, ampSource, groupSource] = await Promise.all([
     readFile(manifestPath, "utf8"),
+    readFile(schemaPath, "utf8"),
     readFile(ampConfigPath, "utf8"),
     readFile(groupConfigPath, "utf8")
   ]);
   const manifest = JSON.parse(manifestSource);
+  const schema = JSON.parse(schemaSource);
+  const schemaValidation = validateManifestSchema(manifest, schema);
   const ampConfig = parseWranglerToml(ampSource);
   const groupConfig = parseWranglerJsonc(groupSource);
   const topology = validateManifestAgainstConfigs(manifest, ampConfig, groupConfig);
   const migrations = await verifyMigrationInventory(manifest, groupRoot);
-  const errors = [...topology.errors, ...migrations.errors];
+  const errors = [...schemaValidation.errors, ...topology.errors, ...migrations.errors];
   return {
     ok: errors.length === 0,
     errors,
+    schema_verified: schemaValidation.ok,
     topology_verified: topology.ok,
     migration_blobs_verified: migrations.ok,
     access_policy_verified: false,
