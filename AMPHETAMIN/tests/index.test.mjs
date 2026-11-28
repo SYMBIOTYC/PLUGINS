@@ -41,10 +41,10 @@ test("initializes a stateless MCP session", async () => {
   assert.equal(payload.result.serverInfo.name, "symbiotyc-amphetamin");
 });
 
-test("advertises only the read-only GROUP health tool", async () => {
+test("advertises the read-only GROUP health tool and bounded compute tools", async () => {
   const response = await handleRequest(rpc("tools/list"), {}, access);
   const payload = await response.json();
-  assert.deepEqual(payload.result.tools.map((tool) => tool.name), ["group.health"]);
+  assert.deepEqual(payload.result.tools.map((tool) => tool.name), ["group.health", "compute_capabilities", "compute_submit_job", "compute_get_job", "compute_cancel_job"]);
   assert.equal(payload.result.tools[0].inputSchema.additionalProperties, false);
 });
 
