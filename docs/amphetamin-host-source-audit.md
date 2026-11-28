@@ -228,3 +228,26 @@ Post-grant-change production checks:
 - D1 row counts remain `runtime_audit_events=0`, `runtime_idempotency=0`.
 
 Next production step is a separately reviewed Worker deployment of the merged source and allowlist variable, followed by a local RFC 8707 + PKCE S256 authorization-code test (or eligible ChatGPT Web connection) and authenticated MCP round-trip. Do not mark the server connected yet.
+
+
+## Production release pipeline prepared — 2026-11-28
+
+A read-only Cloudflare Worker settings read-back confirms that the live production bindings still include:
+- `GROUP` → `symbiotyc-group-control-plane` (production);
+- `RUNTIME_DB` → D1 `633d7c14-d335-426c-be7e-2168a43171bc`;
+- `COMPUTE_TENANT_ID=symbiotyc` and `COMPUTE_PROJECT_ID=compute`;
+- observability, invocation logs, and traces enabled.
+
+The current deployed bindings do **not** include `MCP_ALLOWED_ORIGINS`. The merged `AMPHETAMIN/wrangler.toml` declares the exact allowlist `https://chatgpt.com,https://chat.openai.com`. A complete Wrangler deployment is required to activate that variable and the strict Origin guard; uploading only `src/index.mjs` is insufficient.
+
+[PR #25](https://github.com/SYMBIOTYC/PLUGINS/pull/25) adds a manual-only GitHub Actions release workflow:
+- explicit `workflow_dispatch` confirmation `confirm_production_deploy=yes`;
+- GitHub `production` environment gate;
+- full `npm test` suite;
+- read-only live OAuth discovery preflight;
+- Wrangler 4.169.0 dry-run;
+- production deploy from the full `AMPHETAMIN/wrangler.toml`, including D1 and GROUP bindings.
+
+No secrets are stored in source. Before the first dispatch, configure a dedicated `CLOUDFLARE_API_TOKEN` repository secret and required reviewers/deployment restrictions on the `production` environment. The release runbook is maintained in [SYMBIOTYC-CLOUD-WIKI](https://github.com/SYMBIOTYC/SYMBIOTYC-CLOUD-WIKI/blob/main/Architecture/Compute-Infrastructure/AMPHETAMIN-Production-Release-Runbook.md).
+
+The PR is open and not merged. No production deployment, binding mutation, Access policy change, secret change, or D1 write was performed. The active production version remains `bd9f2f99-4b56-41b7-9e57-73efd98f4800` at 100%. Authenticated OAuth/MCP E2E remains unverified.
