@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { validateStagingConfig } from "../scripts/staging-preflight.mjs";
+import { parseWranglerToml, validateStagingConfig } from "../scripts/staging-preflight.mjs";
 
 const production = {
   name: "symbiotyc-amphetamin-mcp",
@@ -98,4 +98,33 @@ test("rejects missing GROUP or RUNTIME_DB bindings", () => {
 test("does not claim to verify Cloudflare Access policy from local config", () => {
   const result = validateStagingConfig(staging, production);
   assert.equal(result.access_policy_verified, false);
+});
+
+test("parses Wrangler root vars, service bindings, and D1 bindings", () => {
+  const parsed = parseWranglerToml(`
+name = "symbiotyc-amphetamin-mcp-staging"
+workers_dev = false
+preview_urls = false
+
+[vars]
+COMPUTE_TENANT_ID = "tenant-staging"
+COMPUTE_PROJECT_ID = "project-staging"
+
+[[services]]
+binding = "GROUP"
+service = "symbiotyc-group-control-plane-staging"
+
+[[d1_databases]]
+binding = "RUNTIME_DB"
+database_name = "compute-staging"
+database_id = "733d7c14-d335-426c-be7e-2168a43171bc"
+`);
+  assert.equal(parsed.name, "symbiotyc-amphetamin-mcp-staging");
+  assert.equal(parsed.vars.COMPUTE_TENANT_ID, "tenant-staging");
+  assert.equal(parsed.services[0].service, "symbiotyc-group-control-plane-staging");
+  assert.equal(parsed.d1_databases[0].database_id, "733d7c14-d335-426c-be7e-2168a43171bc");
+});
+
+test("rejects malformed Wrangler TOML instead of silently accepting it", () => {
+  assert.throws(() => parseWranglerToml("name = [broken"), /Unsupported TOML value/);
 });
