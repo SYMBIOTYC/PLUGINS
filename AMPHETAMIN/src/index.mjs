@@ -71,6 +71,16 @@ async function derivePrincipal(identity, env) {
   };
 }
 
+async function deriveActivationReadPrincipal(identity, env) {
+  const principal = await derivePrincipal(identity, env);
+  return {
+    ...principal,
+    kind: "service",
+    actor_id: "amphetamin:activation-state-reader",
+    scopes: ["compute:activation:read"]
+  };
+}
+
 async function sha256Text(value) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -129,6 +139,11 @@ function toolList() {
         },
         additionalProperties: false
       }
+    },
+    {
+      name: "compute_activation_state",
+      description: "Read the durable AMPHETAMIN activation, deployment streak, and burnout snapshot for the authenticated project. Read-only; cannot create deployment or recovery events.",
+      inputSchema: { type: "object", properties: {}, additionalProperties: false }
     }
   ];
 }
@@ -231,7 +246,8 @@ async function executeSkill(env, principal, requestId, skillId, input) {
     {
       "symbiotyc.group:health": async () => readGroupHealth(env),
       "symbiotyc.group:capabilities": async () => readGroupJson(env, principal, "/v1/capabilities"),
-      "symbiotyc.group:get_job": async (toolInput) => readGroupJson(env, principal, `/v1/jobs/${toolInput.job_id}`)
+      "symbiotyc.group:get_job": async (toolInput) => readGroupJson(env, principal, `/v1/jobs/${toolInput.job_id}`),
+      "symbiotyc.group:activation_state": async () => readGroupJson(env, principal, "/v1/activation/state")
     },
     {
       idempotencyStore: new D1IdempotencyStore(env.RUNTIME_DB, "tool"),
@@ -379,12 +395,15 @@ export async function handleRequest(request, env, ctx) {
     const toolToSkill = {
       "group.health": "skill.symbiotyc.group-health",
       "compute_capabilities": "skill.symbiotyc.group-capabilities",
-      "compute_get_job": "skill.symbiotyc.group-get-job"
+      "compute_get_job": "skill.symbiotyc.group-get-job",
+      "compute_activation_state": "skill.symbiotyc.group-activation-state"
     };
     const skillId = toolToSkill[params.name];
     if (!skillId) return rpcError(id, -32602, "Unknown tool");
     try {
-      const principal = await derivePrincipal(identity, env);
+      const principal = skillId === "skill.symbiotyc.group-activation-state"
+        ? await deriveActivationReadPrincipal(identity, env)
+        : await derivePrincipal(identity, env);
       const input = params.arguments;
       const result = await executeSkill(env, principal, id, skillId, input);
       const isError = typeof result?.status_code === "number" && result.status_code >= 400;

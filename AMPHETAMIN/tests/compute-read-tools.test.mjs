@@ -27,7 +27,8 @@ test("MCP lists only health and the two read-only compute tools", async () => {
   assert.deepEqual(payload.result.tools.map(tool => tool.name), [
     "group.health",
     "compute_capabilities",
-    "compute_get_job"
+    "compute_get_job",
+    "compute_activation_state"
   ]);
   const getJob = payload.result.tools.find(tool => tool.name === "compute_get_job");
   assert.deepEqual(getJob.inputSchema.required, ["job_id"]);
