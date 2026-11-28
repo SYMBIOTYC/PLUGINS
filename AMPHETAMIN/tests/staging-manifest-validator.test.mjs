@@ -77,8 +77,8 @@ const manifest = {
   resources: {
     access: { policy_verified: false },
     workers: {
-      amphetamin: { name: "amp-staging" },
-      group: { name: "group-staging" }
+      amphetamin: { name: "amp-staging", ingress: { workers_dev: false, preview_urls: false } },
+      group: { name: "group-staging", ingress: { workers_dev: false, preview_urls: false, routes: [], custom_domains: [], service_binding_only: true } }
     },
     d1: { name: "db-staging", database_id: null }
   },
