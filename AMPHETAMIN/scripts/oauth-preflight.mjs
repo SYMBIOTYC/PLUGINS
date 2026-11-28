@@ -76,6 +76,8 @@ export function validateOAuthDiscovery({
 
   const scopes = Array.isArray(metadata.scopes_supported) ? metadata.scopes_supported : [];
   return {
+    resource: resourceMetadata.resource,
+    authorization_servers: advertisedIssuers,
     issuer: metadata.issuer,
     authorization_endpoint: metadata.authorization_endpoint,
     token_endpoint: metadata.token_endpoint,
@@ -83,6 +85,7 @@ export function validateOAuthDiscovery({
     token_endpoint_auth_methods_supported: metadata.token_endpoint_auth_methods_supported,
     pkce_s256: true,
     dcr: true,
+    scopes_supported: scopes,
     offline_access: scopes.includes("offline_access"),
     authorization_response_iss_parameter_supported:
       metadata.authorization_response_iss_parameter_supported === true
