@@ -50,15 +50,23 @@ async function derivePrincipal(identity, env) {
     error.code = "TENANT_MAPPING_UNAVAILABLE";
     throw error;
   }
+  const projectId = env?.COMPUTE_PROJECT_ID;
+  if (typeof projectId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(projectId)) {
+    const error = new Error("trusted runtime project mapping is unavailable");
+    error.code = "PROJECT_MAPPING_UNAVAILABLE";
+    throw error;
+  }
   const stableSubject = typeof identity.id === "string" && identity.id
     ? identity.id
     : identity.email.trim().toLowerCase();
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(stableSubject));
   const actorHash = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
   return {
+    kind: "user",
     tenant_id: tenantId,
+    project_id: projectId,
     actor_id: `access:${actorHash}`,
-    scopes: ["compute:read"]
+    scopes: ["compute:read", "compute:jobs:read"]
   };
 }
 
@@ -98,15 +106,30 @@ async function readLimited(request) {
 }
 
 function toolList() {
-  return [{
-    name: "group.health",
-    description: "Run the verified read-only GROUP health Skill through the Tool/Skill Runtime. This operation does not create or dispatch compute jobs.",
-    inputSchema: {
-      type: "object",
-      properties: {},
-      additionalProperties: false
+  return [
+    {
+      name: "group.health",
+      description: "Run the verified read-only GROUP health Skill through the Tool/Skill Runtime.",
+      inputSchema: { type: "object", properties: {}, additionalProperties: false }
+    },
+    {
+      name: "compute_capabilities",
+      description: "Read the server-derived tenant/project compute quotas, enabled operations, and dispatch status. This operation is read-only.",
+      inputSchema: { type: "object", properties: {}, additionalProperties: false }
+    },
+    {
+      name: "compute_get_job",
+      description: "Read one Job visible to the authenticated tenant/project. This operation is read-only.",
+      inputSchema: {
+        type: "object",
+        required: ["job_id"],
+        properties: {
+          job_id: { type: "string", pattern: "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$" }
+        },
+        additionalProperties: false
+      }
     }
-  }];
+  ];
 }
 
 async function readResponseLimited(response, maxBytes) {
@@ -169,14 +192,46 @@ async function readGroupHealth(env) {
   };
 }
 
-async function executeGroupHealth(env, principal, requestId) {
+function encodeGroupPrincipal(principal) {
+  const bytes = new TextEncoder().encode(JSON.stringify(principal));
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\\+/g, "-").replace(/\\//g, "_").replace(/=+$/g, "");
+}
+
+async function readGroupJson(env, principal, path) {
+  if (!env?.GROUP || typeof env.GROUP.fetch !== "function") {
+    throw new Error("GROUP service binding is unavailable");
+  }
+  const response = await env.GROUP.fetch(new Request(`https://group.internal${path}`, {
+    method: "GET",
+    headers: {
+      "accept": "application/json",
+      "x-symbiotyc-caller": "amphetamin",
+      "x-symbiotyc-principal": encodeGroupPrincipal(principal)
+    }
+  }));
+  const text = await readResponseLimited(response, MAX_GROUP_RESPONSE_BYTES);
+  let body;
+  try { body = JSON.parse(text); }
+  catch { throw new Error("GROUP returned an invalid JSON response"); }
+  if (response.status >= 500) throw new Error("GROUP read request failed");
+  if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("GROUP returned an invalid response object");
+  return { status_code: response.status, body };
+}
+
+async function executeSkill(env, principal, requestId, skillId, input) {
   if (!env?.RUNTIME_DB || typeof env.RUNTIME_DB.prepare !== "function") {
     throw new Error("durable Tool/Skill Runtime database binding is unavailable");
   }
   const audit = new D1AuditSink(env.RUNTIME_DB);
   const toolRuntime = new ToolRuntime(
     TOOL_REGISTRY,
-    { "symbiotyc.group:health": async () => readGroupHealth(env) },
+    {
+      "symbiotyc.group:health": async () => readGroupHealth(env),
+      "symbiotyc.group:capabilities": async () => readGroupJson(env, principal, "/v1/capabilities"),
+      "symbiotyc.group:get_job": async (toolInput) => readGroupJson(env, principal, `/v1/jobs/${toolInput.job_id}`)
+    },
     {
       idempotencyStore: new D1IdempotencyStore(env.RUNTIME_DB, "tool"),
       auditSink: (event) => audit.append(event)
@@ -191,17 +246,21 @@ async function executeGroupHealth(env, principal, requestId) {
       auditSink: (event) => audit.append(event)
     }
   );
-  const requestHash = await sha256Text(String(requestId));
+  const requestHash = await sha256Text(`${String(requestId)}:${skillId}`);
   const timeBucket = Math.floor(Date.now() / 30000);
   const idempotencyKey = `mcp:${principal.actor_id.slice(-24)}:${requestHash.slice(0, 16)}:${timeBucket}`;
   const run = await skillRuntime.run({
     schema_version: "1.0",
     run_id: crypto.randomUUID(),
-    skill_id: "skill.symbiotyc.group-health",
+    skill_id: skillId,
     idempotency_key: idempotencyKey,
-    input: {}
+    input
   }, principal);
   return run.result;
+}
+
+async function executeGroupHealth(env, principal, requestId) {
+  return executeSkill(env, principal, requestId, "skill.symbiotyc.group-health", {});
 }
 
 function toolTextResult(value, isError = false) {
@@ -283,16 +342,19 @@ export async function handleRequest(request, env, ctx) {
         typeof params.arguments !== "object" || Array.isArray(params.arguments)) {
       return rpcError(id, -32602, "Invalid tool parameters");
     }
-    if (params.name !== "group.health") {
-      return rpcError(id, -32602, "Unknown tool");
-    }
-    if (Object.keys(params.arguments).length !== 0) {
-      return rpcError(id, -32602, "group.health accepts no arguments");
-    }
+    const toolToSkill = {
+      "group.health": "skill.symbiotyc.group-health",
+      "compute_capabilities": "skill.symbiotyc.group-capabilities",
+      "compute_get_job": "skill.symbiotyc.group-get-job"
+    };
+    const skillId = toolToSkill[params.name];
+    if (!skillId) return rpcError(id, -32602, "Unknown tool");
     try {
       const principal = await derivePrincipal(identity, env);
-      const result = await executeGroupHealth(env, principal, id);
-      return json({ jsonrpc: "2.0", id, result: toolTextResult(result) });
+      const input = params.arguments;
+      const result = await executeSkill(env, principal, id, skillId, input);
+      const isError = typeof result?.status_code === "number" && result.status_code >= 400;
+      return json({ jsonrpc: "2.0", id, result: toolTextResult(result, isError) });
     } catch (error) {
       const code = typeof error?.code === "string" ? error.code : "RUNTIME_EXECUTION_FAILED";
       return json({
