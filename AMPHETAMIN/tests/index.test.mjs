@@ -4,7 +4,7 @@ import worker, { handleRequest, MAX_REQUEST_BYTES } from "../src/index.mjs";
 import { FakeD1 } from "./fake-d1.mjs";
 
 const access = { access: { getIdentity: async () => ({ email: "owner@example.invalid", id: "access-subject-test" }) } };
-const baseEnv = (overrides = {}) => ({ COMPUTE_TENANT_ID: "symbiotyc", RUNTIME_DB: new FakeD1(), ...overrides });
+const baseEnv = (overrides = {}) => ({ COMPUTE_TENANT_ID: "symbiotyc", COMPUTE_PROJECT_ID: "compute", RUNTIME_DB: new FakeD1(), ...overrides });
 function rpc(method, params = {}, id = 1) {
   return new Request("https://amphetamin.example/mcp", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id, method, params }) });
 }
@@ -22,15 +22,15 @@ test("initializes a stateless MCP session", async () => {
   assert.equal(payload.result.protocolVersion, "2025-03-26");
   assert.equal(payload.result.serverInfo.name, "symbiotyc-amphetamin");
 });
-test("advertises only the read-only GROUP health tool", async () => {
+test("advertises only verified read-only tools", async () => {
   const payload = await (await handleRequest(rpc("tools/list"), baseEnv(), access)).json();
-  assert.deepEqual(payload.result.tools.map(tool => tool.name), ["group.health"]);
-  assert.equal(payload.result.tools[0].inputSchema.additionalProperties, false);
+  assert.deepEqual(payload.result.tools.map(tool => tool.name), ["group.health", "compute_capabilities", "compute_get_job"]);
+  assert.equal(payload.result.tools.every(tool => tool.inputSchema.additionalProperties === false), true);
 });
 test("executes group.health through Skill Runtime, Tool Runtime, and private GROUP binding", async () => {
   const db = new FakeD1();
   let called = false;
-  const env = { COMPUTE_TENANT_ID: "symbiotyc", RUNTIME_DB: db, GROUP: { fetch: async request => {
+  const env = { COMPUTE_TENANT_ID: "symbiotyc", COMPUTE_PROJECT_ID: "compute", RUNTIME_DB: db, GROUP: { fetch: async request => {
     called = true;
     assert.equal(new URL(request.url).pathname, "/health");
     return Response.json({ status: "ok", service: "symbiotyc-group-control-plane", protocol: "symbiotyc.compute.v1", dispatch_enabled: false });
@@ -46,7 +46,7 @@ test("executes group.health through Skill Runtime, Tool Runtime, and private GRO
 });
 test("fails closed when durable runtime database binding is absent", async () => {
   let called = false;
-  const payload = await (await handleRequest(rpc("tools/call", { name: "group.health", arguments: {} }), { COMPUTE_TENANT_ID: "symbiotyc", GROUP: { fetch: async () => { called = true; throw new Error("must not run"); } } }, access)).json();
+  const payload = await (await handleRequest(rpc("tools/call", { name: "group.health", arguments: {} }), { COMPUTE_TENANT_ID: "symbiotyc", COMPUTE_PROJECT_ID: "compute", GROUP: { fetch: async () => { called = true; throw new Error("must not run"); } } }, access)).json();
   assert.equal(called, false);
   assert.equal(payload.result.isError, true);
   assert.match(payload.result.content[0].text, /RUNTIME_EXECUTION_FAILED/);
