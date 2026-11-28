@@ -1,0 +1,11 @@
+name = "symbiotyc-amphetamin-mcp"
+main = "src/index.mjs"
+compatibility_date = "2026-11-28"
+workers_dev = true
+preview_urls = false
+
+# Public hostname is protected by a Worker-level Cloudflare Access policy.
+# No route, custom domain, API token, or public GROUP endpoint is configured.
+[[services]]
+binding = "GROUP"
+service = "symbiotyc-group-control-plane"
