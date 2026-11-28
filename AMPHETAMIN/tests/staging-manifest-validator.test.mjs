@@ -3,7 +3,11 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { computeGitBlobSha, verifyMigrationInventory } from "../scripts/staging-manifest-validator.mjs";
+import {
+  computeGitBlobSha,
+  validateManifestAgainstConfigs,
+  verifyMigrationInventory
+} from "../scripts/staging-manifest-validator.mjs";
 
 test("computes Git blob SHA using Git's blob object framing", () => {
   assert.equal(computeGitBlobSha("test\n"), "9daeafb9864cf43055ae93beb0afd6c7d144bfa4");
@@ -56,4 +60,51 @@ test("blocks missing migration files and unsafe paths", async () => {
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+const manifest = {
+  resources: {
+    workers: {
+      amphetamin: { name: "amp-staging" },
+      group: { name: "group-staging" }
+    },
+    d1: { name: "db-staging", database_id: null }
+  }
+};
+const amp = {
+  name: "amp-staging",
+  services: [{ binding: "GROUP", service: "group-staging" }],
+  d1_databases: [{ binding: "RUNTIME_DB", database_name: "db-staging", database_id: "staging-id" }]
+};
+const group = {
+  name: "group-staging",
+  d1_databases: [{ binding: "DB", database_name: "db-staging", database_id: "staging-id" }]
+};
+
+test("accepts paired Wrangler configs matching the manifest topology", () => {
+  const result = validateManifestAgainstConfigs(manifest, amp, group);
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.errors, []);
+});
+
+test("rejects a Service Binding target that diverges from the manifest", () => {
+  const result = validateManifestAgainstConfigs(manifest, {
+    ...amp, services: [{ binding: "GROUP", service: "production-group" }]
+  }, group);
+  assert.equal(result.ok, false);
+  assert.match(result.errors.join(" "), /Service Binding differs/);
+});
+
+test("rejects a D1 binding that diverges from the manifest", () => {
+  const result = validateManifestAgainstConfigs(manifest, amp, {
+    ...group, d1_databases: [{ binding: "DB", database_name: "production-db", database_id: "staging-id" }]
+  });
+  assert.equal(result.ok, false);
+  assert.match(result.errors.join(" "), /GROUP DB differs/);
+});
+
+test("does not accept a missing manifest topology", () => {
+  const result = validateManifestAgainstConfigs({}, amp, group);
+  assert.equal(result.ok, false);
+  assert.match(result.errors.join(" "), /topology is incomplete/);
 });
