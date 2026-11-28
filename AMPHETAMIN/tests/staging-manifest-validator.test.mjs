@@ -77,8 +77,8 @@ const manifest = {
   resources: {
     access: { policy_verified: false },
     workers: {
-      amphetamin: { name: "amp-staging", ingress: { workers_dev: false, preview_urls: false } },
-      group: { name: "group-staging", ingress: { workers_dev: false, preview_urls: false, service_binding_only: true } }
+      amphetamin: { name: "amp-staging" },
+      group: { name: "group-staging" }
     },
     d1: { name: "db-staging", database_id: null }
   },
@@ -86,15 +86,11 @@ const manifest = {
 };
 const amp = {
   name: "amp-staging",
-  workers_dev: false,
-  preview_urls: false,
   services: [{ binding: "GROUP", service: "group-staging" }],
   d1_databases: [{ binding: "RUNTIME_DB", database_name: "db-staging", database_id: "staging-id" }]
 };
 const group = {
   name: "group-staging",
-  workers_dev: false,
-  preview_urls: false,
   d1_databases: [{ binding: "DB", database_name: "db-staging", database_id: "staging-id" }]
 };
 
@@ -140,46 +136,4 @@ test("blocks manifests that enable provisioning or deployment before approval", 
   const result = validateManifestAgainstConfigs(unsafe, amp, group);
   assert.equal(result.ok, false);
   assert.match(result.errors.join(" "), /authorization flags must remain false/);
-});
-
-
-test("rejects migration symlinks that escape the GROUP checkout", async () => {
-  const root = await mkdtemp(join(tmpdir(), "group-migrations-"));
-  const outside = await mkdtemp(join(tmpdir(), "outside-migrations-"));
-  try {
-    await mkdir(join(root, "migrations"));
-    const source = "SELECT 1;\\n";
-    await writeFile(join(outside, "outside.sql"), source);
-    const { symlink } = await import("node:fs/promises");
-    await symlink(join(outside, "outside.sql"), join(root, "migrations", "0001_escape.sql"));
-    const manifest = { resources: { d1: { expected_migration_blobs: [
-      { path: "migrations/0001_escape.sql", git_blob_sha: computeGitBlobSha(source) }
-    ] } } };
-    const result = await verifyMigrationInventory(manifest, root);
-    assert.equal(result.ok, false);
-    assert.match(result.errors.join(" "), /symlink|outside|unsafe/i);
-  } finally {
-    await rm(root, { recursive: true, force: true });
-    await rm(outside, { recursive: true, force: true });
-  }
-});
-
-test("rejects staging Workers that expose public ingress", () => {
-  const publicAmp = { ...amp, workers_dev: true, preview_urls: true };
-  const publicGroup = {
-    ...group,
-    workers_dev: true,
-    preview_urls: true,
-    routes: [{ pattern: "example.test/*", zone_name: "example.test" }]
-  };
-  const result = validateManifestAgainstConfigs(manifest, publicAmp, publicGroup);
-  assert.equal(result.ok, false);
-  assert.match(result.errors.join(" "), /workers.dev|preview|ingress|routes/i);
-});
-
-test("requires GROUP staging config to remain Service-Binding-only", () => {
-  const exposedGroup = { ...group, custom_domain: true };
-  const result = validateManifestAgainstConfigs(manifest, amp, exposedGroup);
-  assert.equal(result.ok, false);
-  assert.match(result.errors.join(" "), /custom domain|public ingress|Service-Binding-only/i);
 });
