@@ -6,6 +6,8 @@ The live Worker name is `symbiotyc-amphetamin-mcp`. The established MCP hostname
 
 ## Authentication and trust
 
+Cloudflare Managed OAuth is enabled on the Access application, with Dynamic Client Registration enabled. MCP clients authenticate through the standard Access-managed OAuth authorization-code flow; the Worker does not store or issue OAuth client secrets.
+
 Every request to the public hostname remains protected by the existing Access application and exact owner allow policy. The Worker independently calls `ctx.access.getIdentity()`; it fails closed when there is no authenticated identity.
 
 The Access application currently has one allowed owner identity. The Worker maps that identity to the configured SYMBIOTYC tenant/project:
