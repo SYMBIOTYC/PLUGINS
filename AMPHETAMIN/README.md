@@ -29,13 +29,15 @@ This closes the local integration gate only. It does not prove live Cloudflare s
 
 ## Staging configuration preflight
 
-The repository includes a fail-closed, read-only staging configuration validator:
+The repository includes a fail-closed, read-only staging configuration validator. Run it from the `AMPHETAMIN` directory after checking out both repositories side by side:
 
 ```sh
-node scripts/staging-preflight.mjs --staging wrangler.staging.toml --production wrangler.toml
+npm run preflight:staging
 ```
 
-The validator compares the staging config with the production config and rejects reuse of the Worker name, GROUP Service Binding target, D1 database ID/name, or tenant/project identifiers. It also requires `workers_dev = false` and `preview_urls = false` for staging. The command does not create resources, apply migrations, change bindings, or deploy.
+Optional flags override the four inputs: `--staging`, `--production`, `--group-staging`, and `--group-production`.
+
+The validator compares both staging Workers with their production counterparts. It rejects reuse of either Worker name, a production GROUP Service Binding target, a production D1 ID/name, or production tenant/project identifiers. It requires AMPHETAMIN and GROUP to share one dedicated staging D1 database, and requires the GROUP Worker to have `workers_dev = false`, `preview_urls = false`, and no routes or custom-domain ingress. The command does not create resources, apply migrations, change bindings, or deploy.
 
 The current production config is used only as a comparison baseline. Do not create a staging config by copying production IDs. A future staging config must reference separately provisioned staging resources.
 
