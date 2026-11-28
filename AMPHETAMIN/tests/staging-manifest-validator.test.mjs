@@ -108,3 +108,19 @@ test("does not accept a missing manifest topology", () => {
   assert.equal(result.ok, false);
   assert.match(result.errors.join(" "), /topology is incomplete/);
 });
+
+test("blocks manifests that enable provisioning or deployment before approval", () => {
+  const unsafe = {
+    ...manifest,
+    metadata: { provisioning_authorized: true, deploy_authorized: false },
+    approval: { explicit_provisioning_approval: false, deploy_allowed: false },
+    resources: {
+      ...manifest.resources,
+      access: { policy_verified: false }
+    },
+    identity: { model: "UNDECIDED" }
+  };
+  const result = validateManifestAgainstConfigs(unsafe, amp, group);
+  assert.equal(result.ok, false);
+  assert.match(result.errors.join(" "), /authorization flags must remain false/);
+});
