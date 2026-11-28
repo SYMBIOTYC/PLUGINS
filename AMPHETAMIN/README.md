@@ -69,3 +69,16 @@ The manifest also pins the reviewed GROUP migration Git blob IDs:
 - `0004_amphetamin_activation_state.sql` — `a6274650e9e8bd7b2472e52739beb9a85b59f6c5`
 
 Before provisioning or migration, re-read the source files at the pinned GROUP commit and recompute their Git blob IDs. Do not apply migrations merely because the manifest contains expected hashes.
+
+
+### Read-only staging manifest validation
+
+After staging Wrangler files have been created through an explicitly approved process, run:
+
+```sh
+npm run validate:staging-manifest
+```
+
+The validator compares the staging AMPHETAMIN and GROUP Worker names, the AMPHETAMIN GROUP Service Binding target, and both D1 bindings against `config/staging-provisioning-manifest.template.json`. It also recomputes Git blob object IDs for each pinned GROUP migration under `../GROUP/migrations` and fails closed on missing files, unsafe paths, or hash mismatches.
+
+This command is read-only. It never applies migrations, creates resources, changes Access, or deploys. It always reports Access policy verification and provisioning/deployment authorization as false; those gates require separate external evidence and explicit approval. The default command will fail while staging Wrangler files or the GROUP checkout are unavailable, which is intentional.
