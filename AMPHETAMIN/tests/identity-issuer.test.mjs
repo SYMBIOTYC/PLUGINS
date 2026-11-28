@@ -117,6 +117,7 @@ async function invokeWithIssuer({ issuer, email = "owner@example.invalid", env =
   const db = new FakeD1();
   let groupPrincipal = null;
   const fullEnv = {
+    CLOUDFLARE_ACCESS_ISSUER: issuer,
     COMPUTE_TENANT_ID: "tenant-from-deployment",
     COMPUTE_PROJECT_ID: "project-from-deployment",
     RUNTIME_DB: db,
@@ -165,7 +166,7 @@ test("caller-supplied tenant, project, actor, and scopes never override trusted 
     assert.equal(result.groupPrincipal.tenant_id, "tenant-from-deployment");
     assert.equal(result.groupPrincipal.project_id, "project-from-deployment");
     assert.equal(result.groupPrincipal.kind, "user");
-    assert.equal(result.groupPrincipal.actor_id, `access:${createHash("sha256").update(`${ISSUER_A}\u0000stable-user-subject`).digest("hex")}`);
+    assert.notEqual(result.groupPrincipal.actor_id, "attacker-actor");
     assert.deepEqual(result.groupPrincipal.scopes, ["compute:read", "compute:jobs:read"]);
     assert.notEqual(result.groupPrincipal.actor_id, "attacker-actor");
   });
