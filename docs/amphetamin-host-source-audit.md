@@ -84,3 +84,17 @@ This audit captured an earlier placeholder-only state and is superseded by the l
 - GROUP PR #9 added and applied the canonical D1 runtime ledger migration. The runtime tables and append-only triggers are present in production.
 
 The previous OAuth bootstrap plan using a custom Workers OAuth Provider and dedicated OAUTH_KV is superseded. The live Worker relies on Cloudflare Access Managed OAuth and `ctx.access.getIdentity()`; no Access client secret is stored in the Worker source. See [AMPHETAMIN live deployment verification](https://github.com/SYMBIOTYC/SYMBIOTYC-CLOUD-WIKI/blob/main/Architecture/Compute-Infrastructure/Live-Deployment-Verification-2026-11-28.md).
+
+
+## Superseding read-only compute tool verification — 2026-11-28
+
+The live Worker was updated again after [PLUGINS PR #18](https://github.com/SYMBIOTYC/PLUGINS/pull/18). Its active Cloudflare version is `bd9f2f99-4b56-41b7-9e57-73efd98f4800` and deployment `781111b3-33f4-4817-bf41-b1b8539a037c` serves 100% traffic.
+
+The deployed MCP tool surface is now:
+- `group.health` — read-only health check;
+- `compute_capabilities` — read-only capabilities and quota/policy status;
+- `compute_get_job` — read-only tenant/project-scoped Job lookup.
+
+All three execute through Skill Runtime → Tool Runtime → D1-backed idempotency/audit → private GROUP Service Binding. The GROUP principal is server-derived from the Cloudflare Access identity and the trusted tenant/project Worker variables. It contains only `compute:read` and `compute:jobs:read`; no write or cancel scope is granted. The Job ID is UUID-validated and caller-supplied tenant/project fields are rejected.
+
+`compute_submit_job` and `compute_cancel_job` remain withheld until the durable one-time approval service is implemented. The Access policy remains owner-only. A full authenticated external MCP call remains outstanding, so the deployment is source/configuration verified but not yet end-to-end verified by an authenticated client.
