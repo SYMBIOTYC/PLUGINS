@@ -4,12 +4,15 @@ compatibility_date = "2026-11-28"
 workers_dev = true
 preview_urls = false
 
+[vars]
+COMPUTE_TENANT_ID = "symbiotyc"
+COMPUTE_PROJECT_ID = "compute"
+
 # Public hostname is protected by a Worker-level Cloudflare Access policy.
 # No route, custom domain, API token, or public GROUP endpoint is configured.
 [[services]]
 binding = "GROUP"
 service = "symbiotyc-group-control-plane"
-
 
 [[d1_databases]]
 binding = "RUNTIME_DB"
