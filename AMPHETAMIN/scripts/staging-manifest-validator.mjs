@@ -140,6 +140,18 @@ export function validateManifestAgainstConfigs(manifest, stagingAmphetamin, stag
   add(amp.ingress?.preview_urls === false, "Manifest must disable AMPHETAMIN Preview URLs");
   add(group.ingress?.workers_dev === false, "Manifest must disable GROUP workers.dev ingress");
   add(group.ingress?.preview_urls === false, "Manifest must disable GROUP Preview URLs");
+
+  add(Array.isArray(amp.ingress?.public_routes) && amp.ingress.public_routes.length === 0,
+    "Manifest AMPHETAMIN public route inventory must be empty");
+  add(Array.isArray(amp.ingress?.custom_domains) && amp.ingress.custom_domains.length === 0,
+    "Manifest AMPHETAMIN custom domain inventory must be empty");
+  add(Array.isArray(group.ingress?.routes) && group.ingress.routes.length === 0,
+    "Manifest GROUP routes must be empty");
+  add(Array.isArray(group.ingress?.custom_domains) && group.ingress.custom_domains.length === 0,
+    "Manifest GROUP custom domains must be empty");
+  add(group.ingress?.service_binding_only === true,
+    "Manifest GROUP must be declared Service-Binding-only");
+
   add(stagingAmphetamin?.workers_dev === false, "AMPHETAMIN workers.dev ingress must be disabled");
   add(stagingAmphetamin?.preview_urls === false, "AMPHETAMIN Preview URLs must be disabled");
   add(stagingGroup?.workers_dev === false, "GROUP workers.dev ingress must be disabled");
