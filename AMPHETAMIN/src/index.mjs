@@ -82,7 +82,7 @@ async function getAccessIdentity(ctx) {
     const identity = await ctx.access.getIdentity();
     if (!identity || typeof identity.email !== "string") return null;
     const email = identity.email.trim().toLowerCase();
-    if (!email || email.length > 254 || !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) return null;
+    if (!email || email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return null;
     return { email };
   } catch {
     return null;
