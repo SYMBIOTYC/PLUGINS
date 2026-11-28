@@ -164,13 +164,16 @@ export function validateStagingConfig(staging, production, stagingGroup, product
   add(nonEmptyString(stagingGroup.name), "Staging GROUP Worker name is required");
   add(nonEmptyString(productionGroup.name), "Production GROUP Worker name is required");
   add(stagingGroup.name !== productionGroup.name, "GROUP Worker name must differ from production");
-  add(staging.workers_dev === false, "workers_dev must be false for staging AMPHETAMIN");
   add(stagingGroup.workers_dev === false, "GROUP workers_dev must be false");
   add(stagingGroup.preview_urls === false, "GROUP preview_urls must be false");
-  add(!Array.isArray(stagingGroup.routes) || stagingGroup.routes.length === 0,
+  add(stagingGroup.routes === undefined || (Array.isArray(stagingGroup.routes) && stagingGroup.routes.length === 0),
     "GROUP routes must be absent; GROUP is Service-Binding-only");
   add(stagingGroup.custom_domain !== true, "GROUP custom_domain must not expose a public hostname");
 
+  if (productionGroupBinding.length === 1) {
+    add(productionGroupBinding[0].service === productionGroup.name,
+      "Production GROUP Service Binding target must match the production GROUP Worker name");
+  }
   if (stagingGroupBinding.length === 1) {
     add(stagingGroupBinding[0].service === stagingGroup.name,
       "GROUP Service Binding target must match the staging GROUP Worker name");
@@ -204,6 +207,8 @@ export function validateStagingConfig(staging, production, stagingGroup, product
   if (stagingGroupDb.length === 1 && productionGroupDb.length === 1) {
     add(stagingGroupDb[0].database_id !== productionGroupDb[0].database_id,
       "GROUP D1 database ID must differ from production");
+    add(stagingGroupDb[0].database_name !== productionGroupDb[0].database_name,
+      "GROUP D1 database name must differ from production");
   }
   if (stagingAmpDb.length === 1 && stagingGroupDb.length === 1) {
     add(stagingAmpDb[0].database_id === stagingGroupDb[0].database_id &&
@@ -237,10 +242,10 @@ export function validateStagingConfig(staging, production, stagingGroup, product
 }
 
 export async function runStagingPreflight({
-  stagingPath = "AMPHETAMIN/wrangler.staging.toml",
-  productionPath = "AMPHETAMIN/wrangler.toml",
-  groupStagingPath = "GROUP/wrangler.staging.jsonc",
-  groupProductionPath = "GROUP/wrangler.jsonc"
+  stagingPath = "wrangler.staging.toml",
+  productionPath = "wrangler.toml",
+  groupStagingPath = "../GROUP/wrangler.staging.jsonc",
+  groupProductionPath = "../GROUP/wrangler.jsonc"
 } = {}) {
   const [stagingSource, productionSource, groupStagingSource, groupProductionSource] = await Promise.all([
     readFile(stagingPath, "utf8"),
@@ -273,10 +278,10 @@ if (invokedPath && pathToFileURL(invokedPath).href === import.meta.url) {
 
   try {
     const report = await runStagingPreflight({
-      stagingPath: valueAfter("--staging", "AMPHETAMIN/wrangler.staging.toml"),
-      productionPath: valueAfter("--production", "AMPHETAMIN/wrangler.toml"),
-      groupStagingPath: valueAfter("--group-staging", "GROUP/wrangler.staging.jsonc"),
-      groupProductionPath: valueAfter("--group-production", "GROUP/wrangler.jsonc")
+      stagingPath: valueAfter("--staging", "wrangler.staging.toml"),
+      productionPath: valueAfter("--production", "wrangler.toml"),
+      groupStagingPath: valueAfter("--group-staging", "../GROUP/wrangler.staging.jsonc"),
+      groupProductionPath: valueAfter("--group-production", "../GROUP/wrangler.jsonc")
     });
     process.stdout.write(JSON.stringify(report, null, 2) + "\n");
     if (!report.ok) process.exitCode = 1;
